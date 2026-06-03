@@ -10,7 +10,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/menu/keys"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
-	"github.com/wailsapp/wails/v2/pkg/options/windows"
+	wailswindows "github.com/wailsapp/wails/v2/pkg/options/windows"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -44,6 +44,8 @@ func buildMenu(app *App) *menu.Menu {
 }
 
 func main() {
+	ensureSingleInstance()
+
 	app := NewApp()
 
 	configDir, _ := os.UserConfigDir()
@@ -62,7 +64,7 @@ func main() {
 		Bind: []interface{}{
 			app,
 		},
-		Windows: &windows.Options{
+		Windows: &wailswindows.Options{
 			WebviewUserDataPath: filepath.Join(configDir, "Markmiru", "cache"),
 		},
 	})
