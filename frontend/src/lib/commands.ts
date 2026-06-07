@@ -103,7 +103,7 @@ export interface CloseOutcome {
   /** キャンセルされ、タブを閉じなかった場合 true */
   cancelled: boolean
   /** 閉じた後もディスク上に残るファイル（セッション復元対象）。無題の破棄時などは undefined。 */
-  savedFile?: { path: string; mode: string }
+  savedFile?: { path: string }
 }
 
 /**
@@ -117,7 +117,7 @@ export async function closeTab(id: string): Promise<CloseOutcome> {
   if (!tab) return { cancelled: false }
 
   if (!isDirty(tab)) {
-    const savedFile = tab.filePath ? { path: tab.filePath, mode: tab.mode } : undefined
+    const savedFile = tab.filePath ? { path: tab.filePath } : undefined
     tabsStore.close(id)
     return { cancelled: false, savedFile }
   }
@@ -131,13 +131,13 @@ export async function closeTab(id: string): Promise<CloseOutcome> {
     }
     const doc = await saveFile(path, tab.content)
     tabsStore.markSavedDoc(id, doc)
-    const savedFile = { path: doc.path, mode: tab.mode }
+    const savedFile = { path: doc.path }
     tabsStore.close(id)
     return { cancelled: false, savedFile }
   }
   if (choice === 'discard') {
     // 破棄: 既存ファイルはディスク上に残るので復元対象に含める。無題は含めない。
-    const savedFile = tab.filePath ? { path: tab.filePath, mode: tab.mode } : undefined
+    const savedFile = tab.filePath ? { path: tab.filePath } : undefined
     tabsStore.close(id)
     return { cancelled: false, savedFile }
   }
@@ -154,7 +154,7 @@ export async function requestQuit(): Promise<void> {
   uiStore.closing = true
 
   const activeId = tabsStore.activeId
-  const sessionFiles: { path: string; mode: string }[] = []
+  const sessionFiles: { path: string }[] = []
   let activeIndex = -1
 
   const tabs = [...tabsStore.tabs]
@@ -219,7 +219,6 @@ export async function restoreSession(): Promise<void> {
     }
     if (!doc) continue
     const tab = tabsStore.openFromDoc(doc)
-    tabsStore.setMode(tab.id, sf.mode === 'source' ? 'source' : 'view')
     if (i === cfg.session.activeIndex) activeTabId = tab.id
   }
   if (activeTabId) tabsStore.activate(activeTabId)
@@ -228,7 +227,7 @@ export async function restoreSession(): Promise<void> {
 /** 現在の状態から保存すべき設定を組み立てる（無題=パス無しタブはセッションに含めない）。 */
 export function currentConfig(): AppConfig {
   const fileTabs = tabsStore.tabs.filter((t) => t.filePath)
-  const files = fileTabs.map((t) => ({ path: t.filePath as string, mode: t.mode }))
+  const files = fileTabs.map((t) => ({ path: t.filePath as string }))
   const activeIndex = fileTabs.findIndex((t) => t.id === tabsStore.activeId)
   return {
     session: { files, activeIndex },

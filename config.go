@@ -9,10 +9,9 @@ import (
 // 設定・セッションの永続化。Go 標準パッケージ（encoding/json, os, path/filepath）のみで実装。
 // 設計: docs/アーキテクチャ・画面設計.md §5.6, §7
 
-// SessionFile は復元対象ファイル1件（パスと表示モード）。
+// SessionFile は復元対象ファイル1件（パス）。
 type SessionFile struct {
 	Path string `json:"path"`
-	Mode string `json:"mode"`
 }
 
 // Session は前回のセッション（開いていたファイル群とアクティブ位置）。

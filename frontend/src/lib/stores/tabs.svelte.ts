@@ -83,6 +83,12 @@ class TabsStore {
     if (t) t.mode = t.mode === 'view' ? 'source' : 'view'
   }
 
+  /** リモート画像の表示ポリシーを設定する（確認ダイアログの結果を反映）。 */
+  setRemoteImagePolicy(id: string, policy: 'allow' | 'block'): void {
+    const t = this.tabs.find((t) => t.id === id)
+    if (t) t.remoteImagePolicy = policy
+  }
+
   /** ファイル（Go から受け取った FileDoc 相当）を開く。同一パスがあれば再読込してアクティブ化。 */
   openFromDoc(doc: { path: string; name: string; dir: string; content: string }): Tab {
     const existing = this.tabs.find((t) => t.filePath === doc.path)

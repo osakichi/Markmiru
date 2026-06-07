@@ -3,6 +3,7 @@
 import {
   OpenFiles,
   ReadFile,
+  ReadImageAsDataURL,
   SaveFile,
   SaveFileDialog,
   SetDirtyState,
@@ -17,7 +18,6 @@ export type FileDoc = main.FileDoc
 
 export interface SessionFile {
   path: string
-  mode: string
 }
 export interface Session {
   files: SessionFile[]
@@ -75,4 +75,13 @@ export async function saveConfig(cfg: AppConfig): Promise<void> {
 /** 起動引数・IPC 早期受信ファイルを取得する（フロントエンド初期化完了後に一度だけ呼ぶ）。 */
 export async function getPendingFiles(): Promise<string[]> {
   return (await GetPendingFiles()) ?? []
+}
+
+/**
+ * ローカル画像を data URI として返す。
+ * src が相対パスの場合は baseDir を基点に解決する。
+ * ファイル不在・サイズ超過などは空文字を返す。
+ */
+export async function readImageAsDataURL(baseDir: string, src: string): Promise<string> {
+  return (await ReadImageAsDataURL(baseDir, src)) ?? ''
 }

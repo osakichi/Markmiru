@@ -11,6 +11,7 @@
   import { isDirty } from './lib/stores/tabs'
   import { uiStore } from './lib/stores/ui.svelte'
   import { registerMenuHandlers } from './lib/menu'
+  import { installLinkHandler } from './lib/links'
   import { setDirtyState, getPendingFiles } from './lib/api/wails'
   import { restoreSession, currentConfig, schedulePersist, openFileByPath } from './lib/commands'
   import { styleStore } from './lib/style/style.svelte'
@@ -20,6 +21,9 @@
 
   // ネイティブメニュー/ショートカットのイベント購読（解除は onMount の戻り値で）
   onMount(() => registerMenuHandlers())
+
+  // 外部リンクのクリックを外部ブラウザへ委譲（WebView 自体の遷移を防ぐ）
+  onMount(() => installLinkHandler())
 
   // 起動時に前回セッションを復元し、その後に起動引数・IPC 早期受信ファイルを開く。
   // getPendingFiles() の呼出で Go 側の frontReady フラグが立ち、以降の IPC ファイルはイベントで配信される。
@@ -81,7 +85,13 @@
     <div class="content">
       {#if active}
         {#if active.mode === 'view'}
-          <Preview source={active.content} />
+          <Preview
+            source={active.content}
+            tabId={active.id}
+            fileName={active.fileName}
+            fileDir={active.dirHint}
+            remoteImagePolicy={active.remoteImagePolicy}
+          />
         {:else}
           {#key active.id}
             <Editor

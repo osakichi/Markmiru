@@ -4,6 +4,7 @@
 
 export type SaveChoice = 'save' | 'discard' | 'cancel'
 export type MissingChoice = 'retry' | 'skip'
+export type RemoteImageChoice = 'allow' | 'block'
 
 interface DialogButton {
   label: string
@@ -73,6 +74,23 @@ class DialogStore {
       enterValue: 'retry',
       escValue: 'skip'
     }) as Promise<MissingChoice>
+  }
+
+  /** リモート画像を含むファイルを開いた際の表示確認（表示する/表示しない）。 */
+  confirmRemoteImages(fileName: string): Promise<RemoteImageChoice> {
+    return this.#show({
+      title: '外部画像の読み込み確認',
+      message:
+        `「${fileName}」には外部サーバーから読み込む画像が含まれています。\n` +
+        '表示すると、画像の配信元サーバーにアクセス（IP アドレス等）が伝わる場合があります。\n' +
+        '表示しますか？',
+      buttons: [
+        { label: '表示しない', value: 'block', primary: true },
+        { label: '表示する', value: 'allow' }
+      ],
+      enterValue: 'block',
+      escValue: 'block'
+    }) as Promise<RemoteImageChoice>
   }
 
   /** ボタン選択時に呼ぶ。モーダルを閉じて Promise を解決する。 */

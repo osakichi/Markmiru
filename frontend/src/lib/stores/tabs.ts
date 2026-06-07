@@ -18,6 +18,12 @@ export interface Tab {
   savedContent: string
   /** 既定は 'view'（閲覧重視） */
   mode: EditorMode
+  /**
+   * リモート（外部サーバー）画像の表示ポリシー。
+   * undefined = 未確認（既定では遮断してレンダリング）/ 'allow' = 表示許可 / 'block' = 表示しない。
+   * ファイルごとに開いた時に一度だけ確認する。セッションには永続化しない（次回起動時に再確認）。
+   */
+  remoteImagePolicy?: 'allow' | 'block'
 }
 
 /** 未保存（dirty）かどうか。 */

@@ -182,6 +182,21 @@
   max-width: 100%;
 }
 
+/* リモート画像を遮断した場合のプレースホルダ（src を剥がし alt を表示） */
+.markdown-body img[data-remote-blocked] {
+  display: inline-block;
+  min-width: 2em;
+  min-height: 1.5em;
+  padding: 0.5em 0.75em;
+  border: 1px dashed var(--md-border, #d0d7de);
+  border-radius: 6px;
+  color: var(--md-muted, #8b949e);
+  font-size: 0.85em;
+}
+.markdown-body img[data-remote-blocked]::after {
+  content: "🚫 外部画像（非表示） " attr(alt);
+}
+
 /* mermaid 図は中央寄せ（背景はテーマ側） */
 .markdown-body pre.mermaid {
   background: none;

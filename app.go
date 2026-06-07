@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -168,6 +171,74 @@ func (a *App) SaveFileDialog(suggestedName string) (string, error) {
 		DefaultFilename: suggestedName,
 		Filters:         markdownFilters,
 	})
+}
+
+// imageMaxBytes はローカル画像として読み込む最大サイズ（50 MB）。
+const imageMaxBytes = 50 * 1024 * 1024
+
+// imageMIME はファイル拡張子から MIME タイプを返す。
+func imageMIME(ext string) string {
+	switch strings.ToLower(ext) {
+	case ".png":
+		return "image/png"
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".gif":
+		return "image/gif"
+	case ".webp":
+		return "image/webp"
+	case ".svg":
+		return "image/svg+xml"
+	case ".bmp":
+		return "image/bmp"
+	case ".ico":
+		return "image/x-icon"
+	case ".avif":
+		return "image/avif"
+	default:
+		return "application/octet-stream"
+	}
+}
+
+// resolveImagePath は src を baseDir を基点とした絶対パスに解決する。
+//   - 絶対パス（filepath.IsAbs == true, 例: C:\... /home/...）: そのまま使用
+//   - ルート相対パス（\ または / 始まりでボリューム名なし, 例: \Users\... /Users/...）:
+//     baseDir のボリューム名（Windows では "C:" 等, 他 OS では ""）を先頭に付与して絶対化
+//   - 相対パス（例: ./img.png）: baseDir と結合
+func resolveImagePath(baseDir, src string) string {
+	if filepath.IsAbs(src) {
+		return filepath.Clean(src)
+	}
+	if len(src) > 0 && os.IsPathSeparator(src[0]) {
+		// ルート相対: ボリューム名（Windows: "C:" / 他 OS: ""）を補完する
+		vol := filepath.VolumeName(baseDir)
+		return filepath.Clean(vol + src)
+	}
+	return filepath.Clean(filepath.Join(baseDir, src))
+}
+
+// ReadImageAsDataURL はローカル画像ファイルを読み込み、data URI として返す。
+// src が相対パスの場合は baseDir を基点に解決する。
+// ファイルが存在しない場合は空文字を返す（エラーにしない）。
+func (a *App) ReadImageAsDataURL(baseDir, src string) (string, error) {
+	absPath := resolveImagePath(baseDir, src)
+
+	info, err := os.Stat(absPath)
+	if err != nil {
+		return "", nil // ファイル不在は空文字で返す
+	}
+	if info.Size() > imageMaxBytes {
+		return "", fmt.Errorf("image too large: %d bytes", info.Size())
+	}
+
+	data, err := os.ReadFile(absPath)
+	if err != nil {
+		return "", nil
+	}
+
+	mime := imageMIME(filepath.Ext(absPath))
+	encoded := base64.StdEncoding.EncodeToString(data)
+	return fmt.Sprintf("data:%s;base64,%s", mime, encoded), nil
 }
 
 // SaveFile は内容を指定パスへ UTF-8 で書き込み、保存後の FileDoc を返す。
