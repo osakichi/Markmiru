@@ -4,6 +4,7 @@ import { tabsStore } from './stores/tabs.svelte'
 import { isDirty } from './stores/tabs'
 import { uiStore } from './stores/ui.svelte'
 import { styleStore } from './style/style.svelte'
+import { contentHasRemoteImages } from './markdown/renderer'
 import type { StyleProfile } from './style/profile'
 import {
   openFilesDialog,
@@ -222,6 +223,15 @@ export async function restoreSession(): Promise<void> {
     if (i === cfg.session.activeIndex) activeTabId = tab.id
   }
   if (activeTabId) tabsStore.activate(activeTabId)
+
+  // 外部画像を含む全タブ（非アクティブ含む）について表示可否を確認する。
+  // Preview は uiStore.restoring 中はダイアログを表示しないため、ここで一括処理する。
+  for (const tab of tabsStore.tabs) {
+    if (contentHasRemoteImages(tab.content)) {
+      const choice = await dialogStore.confirmRemoteImages(tab.fileName)
+      tabsStore.setRemoteImagePolicy(tab.id, choice)
+    }
+  }
 }
 
 /** 現在の状態から保存すべき設定を組み立てる（無題=パス無しタブはセッションに含めない）。 */

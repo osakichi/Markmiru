@@ -16,6 +16,7 @@ func setSocketPerms(path string) {
 
 func platformGrantForeground() {}
 func activateWindowWin32()     {}
+func focusWebview()            {}
 
 // verifyPeer は接続元プロセスの実効 UID（EUID）を自プロセスと照合する。
 // macOS では AF_UNIX 経由でピアの実行ファイルパスを cgo なしで取得することが困難なため、

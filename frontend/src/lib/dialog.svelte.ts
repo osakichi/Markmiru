@@ -68,11 +68,11 @@ class DialogStore {
       title: 'ファイルが見つかりません',
       message: `次のファイルを開けませんでした:\n${path}`,
       buttons: [
-        { label: '再試行', value: 'retry', primary: true },
-        { label: 'スキップ', value: 'skip' }
+        { label: 'スキップ', value: 'skip', primary: true },
+        { label: '再試行', value: 'retry' }
       ],
-      enterValue: 'retry',
-      escValue: 'skip'
+      enterValue: 'skip', // Enter=メイン（スキップ）
+      escValue: 'retry'   // Esc=サブ（再試行）
     }) as Promise<MissingChoice>
   }
 
@@ -80,16 +80,13 @@ class DialogStore {
   confirmRemoteImages(fileName: string): Promise<RemoteImageChoice> {
     return this.#show({
       title: '外部画像の読み込み確認',
-      message:
-        `「${fileName}」には外部サーバーから読み込む画像が含まれています。\n` +
-        '表示すると、画像の配信元サーバーにアクセス（IP アドレス等）が伝わる場合があります。\n' +
-        '表示しますか？',
+      message: `「${fileName}」に外部画像が含まれています。読み込みますか？`,
       buttons: [
         { label: '表示しない', value: 'block', primary: true },
         { label: '表示する', value: 'allow' }
       ],
-      enterValue: 'block',
-      escValue: 'block'
+      enterValue: 'block', // Enter=メイン（表示しない）
+      escValue: 'allow'    // Esc=サブ（表示する）
     }) as Promise<RemoteImageChoice>
   }
 

@@ -19,6 +19,7 @@ func setSocketPerms(path string) {
 
 func platformGrantForeground() {}
 func activateWindowWin32()     {}
+func focusWebview()            {}
 
 // verifyPeer は接続元プロセスの UID と実行ファイルパスを照合する。
 //   - SO_PEERCRED で UID を取得し自プロセスの UID と一致を確認（カーネル保証）

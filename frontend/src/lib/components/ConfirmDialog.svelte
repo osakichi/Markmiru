@@ -1,7 +1,24 @@
 <script lang="ts">
   import { dialogStore } from '../dialog.svelte'
+  import { FocusWindow } from '../../../wailsjs/go/main/App'
 
-  // アプリ内モーダル（保存確認・不在ファイル確認などを動的ボタンで表示）。
+  let boxEl = $state<HTMLDivElement | undefined>(undefined)
+
+  // ダイアログが開いたら WebView にキーボードフォーカスを与え、ダイアログ内へ移す。
+  // - 文書内（WebView）にフォーカスが無いと <svelte:window onkeydown> がキーを受け取れない。
+  // - 起動直後、Windows の WebView2 は子ウィンドウで動くためクリックするまでキーボード
+  //   フォーカスが入らない。FocusWindow()（Go）がメインウィンドウへ WM_SETFOCUS を送り、
+  //   Wails の chromium.Focus() を誘発して WebView へフォーカスを渡す（他 OS は no-op）。
+  // - requestAnimationFrame で次フレームに遅延し、プライマリボタンへフォーカスを当てる。
+  $effect(() => {
+    if (!dialogStore.open) return
+    void FocusWindow()
+    requestAnimationFrame(() => {
+      const primary = boxEl?.querySelector<HTMLButtonElement>('button.primary')
+      ;(primary ?? boxEl)?.focus()
+    })
+  })
+
   function onKeydown(e: KeyboardEvent): void {
     if (!dialogStore.open) return
     if (e.key === 'Escape') {
@@ -18,7 +35,9 @@
 
 {#if dialogStore.open}
   <div class="overlay">
-    <div class="box" role="dialog" aria-modal="true" aria-label={dialogStore.title}>
+    <!-- tabindex="-1": プログラム的にフォーカス可能にする（Tab キーでは選択されない） -->
+    <div class="box" role="dialog" aria-modal="true" aria-label={dialogStore.title}
+         tabindex="-1" bind:this={boxEl}>
       <div class="title">{dialogStore.title}</div>
       <div class="message">{dialogStore.message}</div>
       <div class="buttons">
@@ -49,6 +68,7 @@
     border-radius: 8px;
     box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25);
     padding: 1.2rem 1.4rem;
+    outline: none;
   }
   .title {
     font-weight: 600;

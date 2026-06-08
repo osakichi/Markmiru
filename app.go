@@ -85,6 +85,13 @@ func (a *App) SetDirtyState(hasUnsaved bool) {
 	a.hasUnsaved.Store(hasUnsaved)
 }
 
+// FocusWindow は WebView にキーボードフォーカスを与える。
+// Windows の WebView2 は起動直後クリックするまでキー入力が届かないため、
+// アプリ内ダイアログ表示時にフロントから呼ぶ（他 OS は no-op）。
+func (a *App) FocusWindow() {
+	focusWebview()
+}
+
 // Quit はアプリを終了する（フロントの終了確認ループ完了後に呼ばれる）。
 func (a *App) Quit() {
 	a.quitting.Store(true)

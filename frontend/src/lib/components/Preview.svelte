@@ -4,6 +4,7 @@
   import { styleStore } from '../style/style.svelte'
   import { profileToVars, varsToStyleString } from '../style/profile'
   import { tabsStore } from '../stores/tabs.svelte'
+  import { uiStore } from '../stores/ui.svelte'
   import { dialogStore } from '../dialog.svelte'
   import '../styles/markdown.css'
 
@@ -50,8 +51,9 @@
       void runMermaid(container, scheme)
       void resolveLocalImages(container, dir)
     })
-    // リモート画像を含み、まだ未確認なら、ファイルごとに一度だけ表示可否を確認する。
-    if (result.hasRemoteImages && policy === undefined && id) {
+    // リモート画像を含み未確認の場合、ファイルごとに一度だけ表示可否を確認する。
+    // セッション復元中（restoring）は commands.restoreSession が一括処理するためスキップ。
+    if (result.hasRemoteImages && policy === undefined && id && !uiStore.restoring) {
       void confirmRemoteImages(id)
     }
   })

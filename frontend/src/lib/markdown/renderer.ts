@@ -113,6 +113,18 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
   }
 })
 
+/**
+ * Markdown テキストにリモート画像（http/https/プロトコル相対）が含まれるか簡易判定する。
+ * セッション復元時の事前確認用。完全な判定は renderMarkdown の DOMPurify フックで行う。
+ */
+export function contentHasRemoteImages(content: string): boolean {
+  // Markdown 画像構文: ![alt](https://...) / ![alt](//...)
+  if (/!\[[^\]]*\]\(\s*(?:https?:)?\/\//i.test(content)) return true
+  // 生 HTML: <img src="https://...">
+  if (/<img\b[^>]*\bsrc\s*=\s*["'](?:https?:)?\/\//i.test(content)) return true
+  return false
+}
+
 /** renderMarkdown の戻り値。hasRemoteImages はリモート画像が含まれていたか。 */
 export interface RenderResult {
   html: string

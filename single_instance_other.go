@@ -10,3 +10,4 @@ func setSocketPerms(_ string)         {}
 func verifyPeer(_ *net.UnixConn) bool { return true }
 func platformGrantForeground()        {}
 func activateWindowWin32()            {}
+func focusWebview()                   {}
