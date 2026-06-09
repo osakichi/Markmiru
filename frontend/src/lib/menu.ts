@@ -3,7 +3,7 @@
 import { EventsOn } from '../../wailsjs/runtime/runtime'
 import { tabsStore } from './stores/tabs.svelte'
 import { uiStore } from './stores/ui.svelte'
-import { openFiles, saveActive, saveActiveAs, requestQuit, printDocument, openFileByPath } from './commands'
+import { openFiles, saveActive, saveActiveAs, requestQuit, printDocument, openFileByPath, openLicense, openReadme } from './commands'
 
 /** メニューイベントの購読を開始し、解除関数を返す。 */
 export function registerMenuHandlers(): () => void {
@@ -26,6 +26,12 @@ export function registerMenuHandlers(): () => void {
       if (active) tabsStore.toggleMode(active.id)
     }),
     EventsOn('menu:toggleSidebar', () => uiStore.toggleSidebar()),
+    EventsOn('menu:about', () => {
+      void openReadme()
+    }),
+    EventsOn('menu:license', () => {
+      void openLicense()
+    }),
     EventsOn('app:request-quit', () => {
       void requestQuit()
     }),

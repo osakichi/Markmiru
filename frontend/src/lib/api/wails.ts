@@ -3,6 +3,8 @@
 import {
   OpenFiles,
   ReadFile,
+  ReadLicense,
+  ReadReadme,
   ReadImageAsDataURL,
   SaveFile,
   SaveFileDialog,
@@ -40,6 +42,16 @@ export async function openFilesDialog(): Promise<FileDoc[]> {
 /** 指定パスを読み込み FileDoc を返す（セッション復元・再読込用）。 */
 export async function readFile(path: string): Promise<FileDoc> {
   return await ReadFile(path)
+}
+
+/** 実行ファイルに埋め込まれたライセンス文書（LICENSE.md）の内容を返す。 */
+export async function readLicense(): Promise<string> {
+  return (await ReadLicense()) ?? ''
+}
+
+/** 実行ファイルに埋め込まれた README（README.md）の内容を返す。About 代わりに表示する。 */
+export async function readReadme(): Promise<string> {
+  return (await ReadReadme()) ?? ''
 }
 
 /** 保存先選択ダイアログ。キャンセル時は空文字を返す。 */

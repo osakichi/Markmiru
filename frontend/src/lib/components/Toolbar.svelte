@@ -54,7 +54,7 @@
     >閲覧</button>
     <button
       class:selected={active?.mode === 'source'}
-      disabled={!active}
+      disabled={!active || active.readOnly}
       onclick={() => active && tabsStore.setMode(active.id, 'source')}
     >編集</button>
   </div>

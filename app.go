@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"encoding/base64"
 	"fmt"
 	"os"
@@ -12,6 +13,18 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+// licenseMarkdown は同梱のライセンス文書（Markmiru 自体＋サードパーティ）。
+// 実行ファイルに埋め込むため、配布時に別ファイルを配置する必要はない。
+//
+//go:embed LICENSE.md
+var licenseMarkdown string
+
+// readmeMarkdown は同梱の README（概要・機能一覧等）。
+// ネイティブメニュー「Markmiru について...」で About 画面の代わりとして表示する。
+//
+//go:embed README.md
+var readmeMarkdown string
 
 // App struct
 type App struct {
@@ -169,6 +182,18 @@ func (a *App) ReadFile(path string) (FileDoc, error) {
 		return FileDoc{}, err
 	}
 	return newFileDoc(absPath, string(data)), nil
+}
+
+// ReadLicense は実行ファイルに埋め込まれたライセンス文書（LICENSE.md）の内容を返す。
+// ネイティブメニューの「ライセンス...」から呼び、編集不可タブとして表示する。
+func (a *App) ReadLicense() string {
+	return licenseMarkdown
+}
+
+// ReadReadme は実行ファイルに埋め込まれた README（README.md）の内容を返す。
+// ネイティブメニューの「Markmiru について...」から呼び、編集不可タブとして表示する（About 代わり）。
+func (a *App) ReadReadme() string {
+	return readmeMarkdown
 }
 
 // SaveFileDialog は保存ダイアログを表示し、選択パスを返す（キャンセル時は空文字）。

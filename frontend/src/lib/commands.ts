@@ -11,6 +11,8 @@ import {
   saveFileDialog,
   saveFile,
   readFile,
+  readLicense,
+  readReadme,
   quit,
   loadConfig,
   saveConfig,
@@ -42,10 +44,58 @@ export async function openFiles(): Promise<void> {
   }
 }
 
+/** ライセンスタブの表示名。 */
+const LICENSE_TAB_NAME = 'LICENSE.md'
+
+/**
+ * 同梱ライセンス（LICENSE.md）を編集不可タブで開く。メニュー「ライセンス...」から呼ぶ。
+ * - filePath を持たせない（null）ため「開いているファイル一覧」にパスは出ず、セッションにも保存されない。
+ * - readOnly タブとして開き、編集モードへの切替・保存を無効化する。
+ * - 既に開いていれば再取得せずそのタブをアクティブ化する。
+ */
+export async function openLicense(): Promise<void> {
+  const existing = tabsStore.tabs.find((t) => t.readOnly && t.fileName === LICENSE_TAB_NAME)
+  if (existing) {
+    tabsStore.activate(existing.id)
+    return
+  }
+  const content = await readLicense()
+  tabsStore.open({
+    filePath: null,
+    fileName: LICENSE_TAB_NAME,
+    content,
+    mode: 'view',
+    readOnly: true
+  })
+}
+
+/** README タブの表示名。 */
+const README_TAB_NAME = 'README.md'
+
+/**
+ * 同梱 README（README.md）を編集不可タブで開く。メニュー「Markmiru について...」から呼ぶ（About 代わり）。
+ * 挙動は openLicense と同様（filePath=null・readOnly・既存があれば再利用）。
+ */
+export async function openReadme(): Promise<void> {
+  const existing = tabsStore.tabs.find((t) => t.readOnly && t.fileName === README_TAB_NAME)
+  if (existing) {
+    tabsStore.activate(existing.id)
+    return
+  }
+  const content = await readReadme()
+  tabsStore.open({
+    filePath: null,
+    fileName: README_TAB_NAME,
+    content,
+    mode: 'view',
+    readOnly: true
+  })
+}
+
 /** アクティブタブを保存。無題（パス未設定）なら保存先を尋ねる。 */
 export async function saveActive(): Promise<void> {
   const tab = tabsStore.active
-  if (!tab) return
+  if (!tab || tab.readOnly) return
   let path = tab.filePath
   if (!path) {
     path = await saveFileDialog(suggestName(tab.fileName))
@@ -83,7 +133,7 @@ export async function printDocument(): Promise<void> {
 /** アクティブタブを名前を付けて保存。 */
 export async function saveActiveAs(): Promise<void> {
   const tab = tabsStore.active
-  if (!tab) return
+  if (!tab || tab.readOnly) return
   const path = await saveFileDialog(suggestName(tab.fileName))
   if (!path) return
   const doc = await saveFile(path, tab.content)

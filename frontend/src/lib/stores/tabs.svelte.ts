@@ -16,6 +16,7 @@ export interface OpenParams {
   dirHint?: string
   content: string
   mode?: EditorMode
+  readOnly?: boolean
 }
 
 class TabsStore {
@@ -42,7 +43,8 @@ class TabsStore {
       dirHint: params.dirHint ?? '',
       content: params.content,
       savedContent: params.content,
-      mode: params.mode ?? 'view'
+      mode: params.mode ?? 'view',
+      readOnly: params.readOnly ?? false
     }
     this.tabs.push(tab)
     this.activeId = tab.id
@@ -75,12 +77,16 @@ class TabsStore {
 
   setMode(id: string, mode: EditorMode): void {
     const t = this.tabs.find((t) => t.id === id)
-    if (t) t.mode = mode
+    if (!t) return
+    // 編集不可タブは常に閲覧モード（編集モードへは切替えない）。
+    if (t.readOnly && mode !== 'view') return
+    t.mode = mode
   }
 
   toggleMode(id: string): void {
     const t = this.tabs.find((t) => t.id === id)
-    if (t) t.mode = t.mode === 'view' ? 'source' : 'view'
+    if (!t || t.readOnly) return
+    t.mode = t.mode === 'view' ? 'source' : 'view'
   }
 
   /** リモート画像の表示ポリシーを設定する（確認ダイアログの結果を反映）。 */

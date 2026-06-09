@@ -40,6 +40,10 @@ func buildMenu(app *App) *menu.Menu {
 	// 標準の編集メニュー（コピー/貼り付け等）
 	appMenu.Append(menu.EditMenu())
 
+	helpMenu := appMenu.AddSubmenu("ヘルプ")
+	helpMenu.AddText("Markmiru について...", nil, func(_ *menu.CallbackData) { app.emit("menu:about") })
+	helpMenu.AddText("ライセンス...", nil, func(_ *menu.CallbackData) { app.emit("menu:license") })
+
 	return appMenu
 }
 
