@@ -1,8 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { selectAll, undo, redo, undoDepth, redoDepth } from '@codemirror/commands'
+  import { openSearchPanel } from '@codemirror/search'
   import { tabsStore } from '../stores/tabs.svelte'
   import { getEditorView } from '../editorBridge'
+  import { viewFind } from '../viewFind.svelte'
   import { clipboardGetText, clipboardSetText } from '../api/wails'
 
   // 両モード（閲覧 .markdown-body / 編集 .cm-editor）の右クリックメニュー。
@@ -65,6 +67,12 @@
     view.focus()
   }
 
+  function searchEditor(): void {
+    const view = getEditorView()
+    if (!view) return
+    openSearchPanel(view) // CodeMirror の検索パネル（Ctrl+F と同じ）
+  }
+
   function undoEditor(): void {
     const view = getEditorView()
     if (!view) return
@@ -104,7 +112,8 @@
         { label: '切り取り', shortcut: 'Ctrl+X', disabled: !sel, action: () => void cutFromEditor(sel) },
         { label: 'コピー', shortcut: 'Ctrl+C', disabled: !sel, action: () => void copyText(sel) },
         { label: '貼り付け', shortcut: 'Ctrl+V', action: () => void pasteIntoEditor() },
-        { label: 'すべて選択', shortcut: 'Ctrl+A', action: () => selectAllEditor() }
+        { label: 'すべて選択', shortcut: 'Ctrl+A', action: () => selectAllEditor() },
+        { label: '検索…', shortcut: 'Ctrl+F', action: () => searchEditor() }
       ]
     }
     // 閲覧モード（貼り付けなし）。項目は常に固定で、リンク以外では「リンクのコピー」を無効にする。
@@ -115,7 +124,8 @@
     return [
       { label: 'コピー', shortcut: 'Ctrl+C', disabled: !sel, action: () => void copyText(sel) },
       { label: 'リンクのコピー', disabled: !anchor, action: () => void copyText(href) },
-      { label: 'すべて選択', shortcut: 'Ctrl+A', action: () => selectAllPreview() }
+      { label: 'すべて選択', shortcut: 'Ctrl+A', action: () => selectAllPreview() },
+      { label: '検索…', shortcut: 'Ctrl+F', action: () => viewFind.show() }
     ]
   }
 
