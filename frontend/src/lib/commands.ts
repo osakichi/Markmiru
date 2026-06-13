@@ -49,7 +49,7 @@ export async function openFiles(): Promise<void> {
 }
 
 /** ライセンスタブの表示名。 */
-const LICENSE_TAB_NAME = 'LICENSE.md'
+const LICENSE_TAB_NAME = 'ライセンス'
 
 /**
  * 同梱ライセンス（LICENSE.md）を編集不可タブで開く。メニュー「ライセンス...」から呼ぶ。
@@ -74,7 +74,7 @@ export async function openLicense(): Promise<void> {
 }
 
 /** README タブの表示名。 */
-const README_TAB_NAME = 'README.md'
+const README_TAB_NAME = 'Markmiru について'
 
 /**
  * 同梱 README（README.md）を編集不可タブで開く。メニュー「Markmiru について...」から呼ぶ（About 代わり）。

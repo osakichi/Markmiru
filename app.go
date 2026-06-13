@@ -234,8 +234,9 @@ func (a *App) ReadLicense() string {
 
 // ReadReadme は実行ファイルに埋め込まれた README（README.md）の内容を返す。
 // ネイティブメニューの「Markmiru について...」から呼び、編集不可タブとして表示する（About 代わり）。
+// 先頭にビルド版（git ショート SHA）を表示して、About を開いてすぐバージョンを確認できるようにする。
 func (a *App) ReadReadme() string {
-	return readmeMarkdown
+	return "**バージョン**: `" + version + "`\n\n---\n\n" + readmeMarkdown
 }
 
 // SaveFileDialog は保存ダイアログを表示し、選択パスを返す（キャンセル時は空文字）。

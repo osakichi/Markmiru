@@ -12,6 +12,8 @@
 1. いいい
 1. ううう
 
+[リンク](https://github.com/osakichi/markmiru/blob/main/frontend/src/lib/components/ExportPickerDialog.svelte)
+
 | 機能 | 状態 |
 |------|:----:|
 | 表 | OK |

@@ -17,6 +17,10 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+// version はビルド時に ldflags（-X main.version=<git ショート SHA>）で埋め込まれる版。
+// 既定値 "dev" は scripts/build.ps1（または build.sh）を介さずに素の wails build をした場合の表示。
+var version = "dev"
+
 // buildMenu はネイティブメニューを構築する。
 // クリック/ショートカットは runtime イベントでフロントへ通知し、フロント側でコマンドを実行する。
 // 設計: docs/アーキテクチャ・画面設計.md §9

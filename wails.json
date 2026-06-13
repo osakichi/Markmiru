@@ -9,6 +9,13 @@
   "postBuildHooks": {
     "darwin/*": "cp ../darwin/iconfile.icns Markmiru.app/Contents/Resources/iconfile.icns"
   },
+  "info": {
+    "companyName": "Markmiru",
+    "productName": "Markmiru",
+    "productVersion": "dev",
+    "copyright": "",
+    "comments": "Markdown viewer/editor"
+  },
   "author": {
     "name": "",
     "email": ""
