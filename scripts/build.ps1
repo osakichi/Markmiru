@@ -31,8 +31,17 @@ $wails = Join-Path $env:USERPROFILE 'go\bin\wails.exe'
 $pkg = Get-Content (Join-Path $root 'frontend\package.json') -Raw | ConvertFrom-Json
 $wantNode = $pkg.volta.node
 $wantNpm = $pkg.volta.npm
-$haveNode = ((& node -v) -replace '^v', '').Trim()
-$haveNpm = (& npm -v).Trim()
+# Probe node/npm from inside frontend/ so the check reflects the toolchain the frontend
+# install actually uses. Volta (and other cwd-based managers) pick the version from the
+# nearest package.json carrying a volta/engines pin, which lives in frontend/ (not the repo root).
+Push-Location (Join-Path $root 'frontend')
+try {
+  $haveNode = ((& node -v) -replace '^v', '').Trim()
+  $haveNpm = (& npm -v).Trim()
+}
+finally {
+  Pop-Location
+}
 if ($haveNode.Split('.')[0] -ne $wantNode.Split('.')[0] -or $haveNpm.Split('.')[0] -ne $wantNpm.Split('.')[0]) {
   throw "Node $wantNode / npm $wantNpm required (found node $haveNode / npm $haveNpm). Install Volta (https://volta.sh) so the pinned versions are used automatically, or install matching versions manually."
 }
