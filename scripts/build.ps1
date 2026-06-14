@@ -1,5 +1,13 @@
 # Markmiru build script (Windows / PowerShell).
 #
+# Produces a fully fresh build where the frontend, the Go backend, and the final
+# executable all reflect the CURRENT source state in one shot:
+#   - The previously generated frontend bundle (frontend/dist) is removed first, so the
+#     embedded assets (//go:embed all:frontend/dist) cannot carry over stale files.
+#   - wails build then re-runs "npm run build" to regenerate frontend/dist from source,
+#     and -clean wipes build/bin so no old artifact is left behind.
+#   - Go is recompiled by wails build (its content-addressed cache always tracks source).
+#
 # Embeds the git short SHA as the version:
 #   - Runtime (shown at the end of the "About Markmiru" tab): Go ldflags (-X main.version=<sha>)
 #   - OS properties (Explorer > Properties > Details > Product version):
@@ -31,7 +39,13 @@ try {
   $patched = [regex]::Replace($original, $pvRegex, '${1}"' + $sha + '"')
   [System.IO.File]::WriteAllText($wailsJson, $patched)
 
-  & $wails build -ldflags "-X main.version=$sha"
+  # Remove the previously generated frontend bundle so embedded assets are always rebuilt
+  # from the current source (wails build re-runs "npm run build" to regenerate it).
+  $dist = Join-Path $root 'frontend\dist'
+  if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
+
+  # -clean wipes build/bin first so no stale executable/artifact survives the build.
+  & $wails build -clean -ldflags "-X main.version=$sha"
   if ($LASTEXITCODE -ne 0) { throw "wails build failed (exit $LASTEXITCODE)" }
 }
 finally {

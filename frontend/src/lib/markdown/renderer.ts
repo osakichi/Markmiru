@@ -47,6 +47,31 @@ const md: MarkdownIt = new MarkdownIt({
 // GFM チェックリスト
 md.use(taskLists, { enabled: true, label: true })
 
+// 見出しに GitHub 互換のスラッグ id を付与する（文書内リンク `#...` のジャンプ先になる）。
+// 規則: トリム → 小文字化 → 文字/数字/結合文字/空白/`_`/`-` 以外を除去 → 連続空白を `-` に。
+// 同一スラッグが複数あれば 2 件目以降に `-1`, `-2`… を付ける（GitHub と同じ重複解決）。
+function slugify(text: string): string {
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\p{M}\s_-]/gu, '')
+    .replace(/\s+/g, '-')
+}
+
+md.core.ruler.push('heading_ids', (state) => {
+  const seen = new Map<string, number>()
+  const tokens = state.tokens
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i].type !== 'heading_open') continue
+    const inline = tokens[i + 1]
+    if (!inline || inline.type !== 'inline') continue
+    const base = slugify(inline.content) || 'section'
+    const n = seen.get(base) ?? 0
+    seen.set(base, n + 1)
+    tokens[i].attrSet('id', n === 0 ? base : `${base}-${n}`)
+  }
+})
+
 // ```mermaid フェンスは描画用プレースホルダとして出力（描画は DOM 反映後）
 const defaultFence = md.renderer.rules.fence!
 md.renderer.rules.fence = (tokens, idx, options, env, self) => {

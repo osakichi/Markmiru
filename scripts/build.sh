@@ -4,6 +4,13 @@
 # !!! 未検証 !!! 現在 Windows（scripts/build.ps1）でのみ動作確認済み。
 #   macOS / Linux 対応に着手する際に、このスクリプトの動作を必ず検証すること。
 #
+# フロントエンド・Go バックエンド・実行バイナリのすべてが現在のソース状態を一括反映する:
+#   - 旧 frontend/dist を先に削除し、埋め込みアセット（//go:embed all:frontend/dist）に
+#     古いファイルが残らないようにする。
+#   - wails build が "npm run build" を再実行して dist をソースから再生成し、
+#     -clean が build/bin の旧成果物を一掃する。
+#   - Go は wails build により再コンパイルされる（内容ハッシュのキャッシュで常にソース追従）。
+#
 # git のショート SHA をバージョンとして埋め込む（Windows 版 build.ps1 と同等）:
 #   - 実行時（メニュー「Markmiru について...」の末尾に表示）: Go の ldflags (-X main.version=<sha>)
 #   - OS のプロパティ（macOS: 情報を見る → バージョン）: wails.json の info.productVersion に一時注入。
@@ -34,4 +41,9 @@ trap 'sed -E "s/(\"productVersion\"[[:space:]]*:[[:space:]]*)\"[^\"]*\"/\1\"dev\
 sed -E 's/("productVersion"[[:space:]]*:[[:space:]]*)"[^"]*"/\1"'"$sha"'"/' "$wails_json" > "$wails_json.tmp"
 mv "$wails_json.tmp" "$wails_json"
 
-"$wails" build -ldflags "-X main.version=$sha"
+# 旧 frontend/dist を削除して埋め込みアセットを必ずソースから再生成させる
+# （wails build が "npm run build" を再実行して dist を作り直す）。
+rm -rf "$root/frontend/dist"
+
+# -clean で build/bin を先に一掃し、古い実行バイナリ/成果物を残さない。
+"$wails" build -clean -ldflags "-X main.version=$sha"

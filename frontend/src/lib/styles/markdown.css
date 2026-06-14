@@ -23,6 +23,11 @@
   word-wrap: break-word;
 }
 
+/* 文書内リンクのジャンプ時、見出しが上端に張り付かないよう余白を確保。 */
+.markdown-body :is(h1, h2, h3, h4, h5, h6) {
+  scroll-margin-top: 1rem;
+}
+
 /* 見出し（h1〜h6 個別） */
 .markdown-body h1 {
   font-family: var(--md-h1-font);
