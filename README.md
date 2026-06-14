@@ -116,6 +116,23 @@ Go・Node.js・Wails CLI の導入は全 OS で共通です。これに加えて
    - 手動で導入する場合は [https://nodejs.org/](https://nodejs.org/) 等で **Node 24 系（npm 11 同梱）** を入れてください。
    - 確認: `node -v`（`v24.x`）／ `npm -v`（`11.x`）
    - フロントエンドの依存取得はビルド時に Wails が自動実行（`npm ci`）するため、手動での操作は通常不要です（依存を追加・更新したいときのみ、固定版の環境で手動 `npm install` を実行してロックを更新します）。
+
+   <details>
+   <summary><b>Volta を使わない場合</b>（既に別バージョンの node/npm が入っている環境）</summary>
+
+   OS が PATH 上に見せる `node`/`npm` は基本的に1組だけです。固定版（Node 24 系／npm 11 系）にするには次のいずれかを取ります（版が範囲外なら `engine-strict` とビルドスクリプトの検査が**エラーで知らせます**）。
+
+   - **A. グローバルの node を入れ替える**（他プロジェクトで別版が不要なら最も簡単）
+     - [nodejs.org](https://nodejs.org/) から **Node 24 系**インストーラを入れて既存版を上書き（npm 11 同梱）。必要なら `npm install -g npm@11.13.0` で npm を合わせる。
+     - ⚠️ マシン全体の node が変わるため、別版を要する他プロジェクトに影響します。
+   - **B. ビルド用シェルだけ固定版を PATH の先頭に出す**（グローバルを変えたくない場合）
+     - Node 24 系の**バイナリ（zip／tar。インストーラではない）**を任意フォルダに展開し、ビルドするターミナルでのみ PATH 先頭に追加する:
+       - Windows（PowerShell・そのセッションのみ）: `$env:Path = "C:\node24;$env:Path"`
+       - macOS / Linux（そのシェルのみ）: `export PATH="$HOME/node24/bin:$PATH"`
+     - `node -v` が `v24.x` になっていることを確認してからビルド。他のターミナルは従来の node のままです。
+   - **C. 別のバージョンマネージャを使う**
+     - 複数プロジェクトで版を共存させたいなら **nvm（nvm-windows）／ fnm／ mise／ asdf** でも可（プロジェクトごとに自動切替）。要件は「固定版が PATH に出ること」だけで、ツールは問いません。
+   </details>
 3. **Wails CLI** をインストール（コマンドは全 OS 同一）
    ```
    go install github.com/wailsapp/wails/v2/cmd/wails@latest
