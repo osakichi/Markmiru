@@ -12,7 +12,9 @@
 1. いいい
 1. ううう
 
-[リンク](https://github.com/osakichi/markmiru/blob/main/frontend/src/lib/components/ExportPickerDialog.svelte)
+[外部リンク](https://github.com/osakichi/markmiru/blob/main/frontend/src/lib/components/ExportPickerDialog.svelte)
+
+[文書内リンク](#mermaid-図)
 
 | 機能 | 状態 |
 |------|:----:|

@@ -83,7 +83,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## CodeMirror 6
 
-Packages: `codemirror`, `@codemirror/lang-markdown`, `@codemirror/state`, `@codemirror/theme-one-dark`
+Packages: `@codemirror/view`, `@codemirror/state`, `@codemirror/commands`, `@codemirror/language`, `@codemirror/autocomplete`, `@codemirror/search`, `@codemirror/lang-markdown`, `@codemirror/theme-one-dark`
 
 Copyright (C) 2018-2021 by Marijn Haverbeke <marijn@haverbeke.berlin> and others
 
