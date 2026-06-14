@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Markmiru ビルドスクリプト（macOS / Linux）。
 #
-# !!! 未検証 !!! 現在 Windows（scripts/build.ps1）でのみ動作確認済み。
-#   macOS / Linux 対応に着手する際に、このスクリプトの動作を必ず検証すること。
+# 検証状況: macOS（arm64）で動作確認済み（パッケージング・起動まで）。Linux は未検証のため、
+#   Linux 対応に着手する際に、このスクリプトの動作を必ず検証すること。
 #
 # フロントエンド・Go バックエンド・実行バイナリのすべてが現在のソース状態を一括反映する:
 #   - 旧 frontend/dist を先に削除し、埋め込みアセット（//go:embed all:frontend/dist）に

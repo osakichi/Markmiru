@@ -31,6 +31,12 @@ const appTitle = "Markmiru"
 func buildMenu(app *App) *menu.Menu {
 	appMenu := menu.NewMenu()
 
+	// macOS では先頭に標準アプリメニュー（About / サービス / 隠す / 終了 Cmd+Q）を置く。
+	// これにより mac の慣習に沿った「Markmiru」メニューが提供され、Quit も標準で機能する。
+	if isMacOS {
+		appMenu.Append(menu.AppMenu())
+	}
+
 	fileMenu := appMenu.AddSubmenu("ファイル")
 	fileMenu.AddText("新規", keys.CmdOrCtrl("n"), func(_ *menu.CallbackData) { app.emit("menu:new") })
 	fileMenu.AddText("開く", keys.CmdOrCtrl("o"), func(_ *menu.CallbackData) { app.emit("menu:open") })
@@ -42,15 +48,41 @@ func buildMenu(app *App) *menu.Menu {
 	styleMenu := fileMenu.AddSubmenu("スタイル")
 	styleMenu.AddText("インポート...", nil, func(_ *menu.CallbackData) { app.emit("menu:style-import") })
 	styleMenu.AddText("エクスポート...", nil, func(_ *menu.CallbackData) { app.emit("menu:style-export") })
-	fileMenu.AddSeparator()
-	fileMenu.AddText("終了", keys.CmdOrCtrl("q"), func(_ *menu.CallbackData) { runtime.Quit(app.ctx) })
+	// macOS は標準アプリメニューが「終了（Cmd+Q）」を提供するため、ファイルメニューには置かない
+	// （Cmd+Q の二重割り当てを避ける）。Windows / Linux ではここで提供する。
+	if !isMacOS {
+		fileMenu.AddSeparator()
+		fileMenu.AddText("終了", keys.CmdOrCtrl("q"), func(_ *menu.CallbackData) { runtime.Quit(app.ctx) })
+	}
+
+	// 編集メニュー（ファイルと表示の間に置くのが各 OS の慣習）。
+	// macOS: menu.EditMenu() のネイティブ標準メニュー。取り消し/コピー/貼り付け等が
+	//   ネイティブセレクタ（copy: 等）経由でフォーカス文脈に応じて確実に動作するため維持する。
+	//   【既知の制約】メニュー名・項目は英語（"Edit"/"Copy"…）固定で日本語化できない。Wails
+	//   v2.12.0 のネイティブ実装（WailsMenu.m appendRole）がこれらの文字列をハードコードして
+	//   おり、Info.plist の CFBundleLocalizations / ja.lproj 等のアプリ側ローカライズでは
+	//   変更不可（日本語 OS でも "Edit" のまま）。日本語化は Wails のパッチ/フォーク、または
+	//   ネイティブ動作を捨てて手組みするしかなく、現状は英語表記を許容する。docs の既知課題参照。
+	// Windows / Linux: Wails のロールメニューは macOS 専用のため、日本語ラベルで手組みする。
+	//   各項目はフロントへ menu:* を発火し、ContextMenu と同じ editActions のハンドラで実行する。
+	//   Ctrl+C/V/X/A/Z はアクセラレータ登録しない（WebView/CodeMirror のネイティブなキー処理＝
+	//   フォーカス文脈に応じた既存挙動を奪わないため）。メニューはクリックでの呼び出し用。
+	if isMacOS {
+		appMenu.Append(menu.EditMenu())
+	} else {
+		editMenu := appMenu.AddSubmenu("編集")
+		editMenu.AddText("取り消し", nil, func(_ *menu.CallbackData) { app.emit("menu:undo") })
+		editMenu.AddText("やり直し", nil, func(_ *menu.CallbackData) { app.emit("menu:redo") })
+		editMenu.AddSeparator()
+		editMenu.AddText("切り取り", nil, func(_ *menu.CallbackData) { app.emit("menu:cut") })
+		editMenu.AddText("コピー", nil, func(_ *menu.CallbackData) { app.emit("menu:copy") })
+		editMenu.AddText("貼り付け", nil, func(_ *menu.CallbackData) { app.emit("menu:paste") })
+		editMenu.AddText("すべて選択", nil, func(_ *menu.CallbackData) { app.emit("menu:selectAll") })
+	}
 
 	viewMenu := appMenu.AddSubmenu("表示")
 	viewMenu.AddText("閲覧/編集切替", keys.CmdOrCtrl("e"), func(_ *menu.CallbackData) { app.emit("menu:toggleMode") })
 	viewMenu.AddText("サイドバー", keys.CmdOrCtrl("b"), func(_ *menu.CallbackData) { app.emit("menu:toggleSidebar") })
-
-	// 標準の編集メニュー（コピー/貼り付け等）
-	appMenu.Append(menu.EditMenu())
 
 	helpMenu := appMenu.AddSubmenu("ヘルプ")
 	helpMenu.AddText("Markmiru について...", nil, func(_ *menu.CallbackData) { app.emit("menu:about") })

@@ -1,12 +1,20 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { selectAll, undo, redo, undoDepth, redoDepth } from '@codemirror/commands'
+  import { undoDepth, redoDepth } from '@codemirror/commands'
   import { openSearchPanel } from '@codemirror/search'
   import { tabsStore } from '../stores/tabs.svelte'
   import { getEditorView } from '../editorBridge'
   import { viewFind } from '../viewFind.svelte'
-  import { selectElementContents } from '../dom'
-  import { clipboardGetText, clipboardSetText } from '../api/wails'
+  import {
+    copyText,
+    editorSelectionText,
+    pasteIntoEditor,
+    cutFromEditor,
+    selectAllEditor,
+    selectAllPreview,
+    undoEditor,
+    redoEditor
+  } from '../editActions'
 
   // 両モード（閲覧 .markdown-body / 編集 .cm-editor）の右クリックメニュー。
   // 既定の WebView コンテキストメニューは無効のため、最小限の標準項目を自前で出す。
@@ -28,68 +36,10 @@
     open = false
   }
 
-  async function copyText(text: string): Promise<void> {
-    if (text) await clipboardSetText(text)
-  }
-
-  // 選択中の全範囲（複数選択を含む）を CodeMirror ネイティブと同様に改行で連結して返す。
-  function editorSelectionText(): string {
-    const view = getEditorView()
-    if (!view) return ''
-    const { state } = view
-    return state.selection.ranges
-      .filter((r) => !r.empty)
-      .map((r) => state.sliceDoc(r.from, r.to))
-      .join(state.lineBreak)
-  }
-
-  async function pasteIntoEditor(): Promise<void> {
-    const view = getEditorView()
-    if (!view) return
-    const text = await clipboardGetText()
-    if (text) view.dispatch(view.state.replaceSelection(text))
-    view.focus()
-  }
-
-  async function cutFromEditor(text: string): Promise<void> {
-    const view = getEditorView()
-    if (!view) return
-    if (text) {
-      await clipboardSetText(text)
-      view.dispatch(view.state.replaceSelection(''))
-    }
-    view.focus()
-  }
-
-  function selectAllEditor(): void {
-    const view = getEditorView()
-    if (!view) return
-    selectAll(view) // CodeMirror 組み込みコマンド
-    view.focus()
-  }
-
   function searchEditor(): void {
     const view = getEditorView()
     if (!view) return
     openSearchPanel(view) // CodeMirror の検索パネル（Ctrl+F と同じ）
-  }
-
-  function undoEditor(): void {
-    const view = getEditorView()
-    if (!view) return
-    undo(view)
-    view.focus()
-  }
-
-  function redoEditor(): void {
-    const view = getEditorView()
-    if (!view) return
-    redo(view)
-    view.focus()
-  }
-
-  function selectAllPreview(): void {
-    selectElementContents(document.querySelector('.markdown-body'))
   }
 
   function buildItems(e: MouseEvent): MenuItem[] {

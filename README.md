@@ -204,7 +204,7 @@ Go・Node.js・Wails CLI の導入は全 OS で共通です。これに加えて
      ```powershell
      & .\scripts\build.ps1
      ```
-   - macOS / Linux 🔄（未検証）:
+   - macOS / Linux（macOS はビルド確認済み 🔄 / Linux 未検証）:
      ```bash
      ./scripts/build.sh
      ```

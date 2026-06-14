@@ -11,6 +11,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// isMacOS は macOS 固有のメニュー構成（標準アプリメニューの付与等）を切り替えるための定数。
+const isMacOS = false
+
 // setSocketPerms はソケットファイルを所有者専用に制限する。
 // 0600: ファイル権限によるユーザー分離（ディレクトリの 0700 と合わせた二重防御）。
 func setSocketPerms(path string) {

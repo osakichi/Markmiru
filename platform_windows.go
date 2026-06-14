@@ -20,6 +20,9 @@ var (
 
 const wmSetFocus = 0x0007 // WM_SETFOCUS
 
+// isMacOS は macOS 固有のメニュー構成（標準アプリメニューの付与等）を切り替えるための定数。
+const isMacOS = false
+
 func setSocketPerms(_ string) {}
 func verifyPeer(_ *net.UnixConn) bool { return true }
 
