@@ -46,11 +46,31 @@
     return false
   }
 
+  // 改行コードを正規化せず元のまま保持する。
+  // CodeMirror は既定でロード時に改行を LF へ正規化する。検出した改行を lineSeparator に設定すると、
+  // 行分割と state.lineBreak（改行挿入時の文字）が元の改行になる。ただし doc.toString() は
+  // lineSeparator を無視して常に "\n" で連結するため、内容の読み出しは必ず readDoc()（= lineBreak
+  // 指定の sliceString）を使う。これにより value === readDoc() となり、閲覧→編集の切替（マウント）
+  // だけで dirty になる誤検知を防ぎ、保存時も元の改行を保持する。
+  // 判定順: CRLF を先に見る（"\r\n" は "\r" を含むため）→ 旧 Mac の単独 CR → 既定 LF。
+  function detectLineSeparator(text: string): string {
+    if (text.includes('\r\n')) return '\r\n'
+    if (text.includes('\r')) return '\r'
+    return '\n'
+  }
+
+  // ドキュメント内容を、設定した改行コード（state.lineBreak）で連結して返す。
+  // doc.toString() は常に "\n" 連結のため使わない。
+  function readDoc(state: EditorState): string {
+    return state.doc.sliceString(0, state.doc.length, state.lineBreak)
+  }
+
   onMount(() => {
     view = new EditorView({
       doc: value,
       parent: host,
       extensions: [
+        EditorState.lineSeparator.of(detectLineSeparator(value)),
         // basicSetup 相当のうち、複数選択（rectangularSelection / allowMultipleSelections）と
         // 折りたたみ・自動補完・lint を除いた最小構成。検索（Ctrl+F）・undo/redo は維持。
         lineNumbers(),
@@ -75,7 +95,7 @@
         }),
         themeComp.of(themeExt(styleStore.active.colorScheme)),
         EditorView.updateListener.of((u) => {
-          if (u.docChanged) onChange?.(u.state.doc.toString())
+          if (u.docChanged) onChange?.(readDoc(u.state))
         })
       ]
     })
@@ -88,10 +108,10 @@
     view?.destroy()
   })
 
-  // 外部から value が変化した場合に同期（タブ切替時など）
+  // 外部から value が変化した場合に同期（タブ切替時など）。比較は readDoc（lineBreak 連結）で行う。
   $effect(() => {
     const v = value
-    if (view && v !== view.state.doc.toString()) {
+    if (view && v !== readDoc(view.state)) {
       view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: v } })
     }
   })
