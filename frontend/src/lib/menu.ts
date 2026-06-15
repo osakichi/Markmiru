@@ -4,7 +4,7 @@ import { EventsOn } from '../../wailsjs/runtime/runtime'
 import { tabsStore } from './stores/tabs.svelte'
 import { uiStore } from './stores/ui.svelte'
 import { openFiles, saveActive, saveActiveAs, requestQuit, printDocument, openFileByPath, openLicense, openReadme, exportStyle, importStyle } from './commands'
-import { menuUndo, menuRedo, menuCut, menuCopy, menuPaste, menuSelectAll } from './editActions'
+import { menuUndo, menuRedo, menuCut, menuCopy, menuPaste, menuSelectAll, menuFind } from './editActions'
 
 /** メニューイベントの購読を開始し、解除関数を返す。 */
 export function registerMenuHandlers(): () => void {
@@ -41,6 +41,7 @@ export function registerMenuHandlers(): () => void {
       void menuPaste()
     }),
     EventsOn('menu:selectAll', () => menuSelectAll()),
+    EventsOn('menu:find', () => menuFind()),
     EventsOn('menu:style-import', () => {
       void importStyle()
     }),

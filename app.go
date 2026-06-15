@@ -98,6 +98,20 @@ func (a *App) SetDirtyState(hasUnsaved bool) {
 	a.hasUnsaved.Store(hasUnsaved)
 }
 
+// SetEditMenuEnabled は手組み「編集」メニュー（Windows / Linux）の編集専用項目
+// （取り消し/やり直し/切り取り/貼り付け）の有効・無効を、編集可能か（編集モードか）で切り替える。
+// フロントがアクティブタブのモード変化時に呼ぶ。macOS はネイティブ編集メニューが文脈に応じて
+// 自動制御するため何もしない。
+func (a *App) SetEditMenuEnabled(canEdit bool) {
+	if isMacOS || a.ctx == nil {
+		return
+	}
+	for _, it := range editOnlyMenuItems {
+		it.Disabled = !canEdit
+	}
+	runtime.MenuUpdateApplicationMenu(a.ctx)
+}
+
 // FocusWindow は WebView にキーボードフォーカスを与える。
 // Windows の WebView2 は起動直後クリックするまでキー入力が届かないため、
 // アプリ内ダイアログ表示時にフロントから呼ぶ（他 OS は no-op）。

@@ -4,9 +4,11 @@
 // （特に貼り付けのプログラム的呼び出し制限）を回避する。
 // 設計: docs/アーキテクチャ・画面設計.md §9
 import { selectAll, undo, redo } from '@codemirror/commands'
+import { openSearchPanel } from '@codemirror/search'
 import { tabsStore } from './stores/tabs.svelte'
 import { getEditorView } from './editorBridge'
 import { selectElementContents } from './dom'
+import { viewFind } from './viewFind.svelte'
 import { clipboardGetText, clipboardSetText } from './api/wails'
 
 /** 任意のテキストをクリップボードへ書き込む（空文字は無視）。 */
@@ -103,4 +105,14 @@ export async function menuPaste(): Promise<void> {
 export function menuSelectAll(): void {
   if (isSourceMode()) selectAllEditor()
   else selectAllPreview()
+}
+
+export function menuFind(): void {
+  // 検索は両モードで使える。編集モードは CodeMirror の検索パネル、閲覧モードはページ内検索バー。
+  if (isSourceMode()) {
+    const view = getEditorView()
+    if (view) openSearchPanel(view)
+  } else {
+    viewFind.show()
+  }
 }

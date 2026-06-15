@@ -25,6 +25,11 @@ var version = "dev"
 // （platform_windows.go の findMainWindow）ため、両者で同一値を共有する。
 const appTitle = "Markmiru"
 
+// editOnlyMenuItems は手組み「編集」メニュー（Windows / Linux）のうち、編集モードでのみ
+// 使える項目（取り消し/やり直し/切り取り/貼り付け）。閲覧モードでは非活性にするため、
+// SetEditMenuEnabled から参照できるよう保持する。macOS はネイティブ編集メニューのため未使用。
+var editOnlyMenuItems []*menu.MenuItem
+
 // buildMenu はネイティブメニューを構築する。
 // クリック/ショートカットは runtime イベントでフロントへ通知し、フロント側でコマンドを実行する。
 // 設計: docs/アーキテクチャ・画面設計.md §9
@@ -65,19 +70,30 @@ func buildMenu(app *App) *menu.Menu {
 	//   ネイティブ動作を捨てて手組みするしかなく、現状は英語表記を許容する。docs の既知課題参照。
 	// Windows / Linux: Wails のロールメニューは macOS 専用のため、日本語ラベルで手組みする。
 	//   各項目はフロントへ menu:* を発火し、ContextMenu と同じ editActions のハンドラで実行する。
-	//   Ctrl+C/V/X/A/Z はアクセラレータ登録しない（WebView/CodeMirror のネイティブなキー処理＝
-	//   フォーカス文脈に応じた既存挙動を奪わないため）。メニューはクリックでの呼び出し用。
+	//   ショートカットは「表示のみ」: ラベルに "\t" ＋ キー表記を埋め込む（Win32 が右寄せ表示）。
+	//   アクセラレータ（第2引数）には登録しない＝WebView/CodeMirror のネイティブなキー処理や、
+	//   設定パネル・検索バー等の入力欄での Ctrl+C/V/X を奪わないため（キー操作は元々ネイティブで動作）。
+	//   編集専用の項目は閲覧モードでは非活性にする（SetEditMenuEnabled が切り替える）。
 	if isMacOS {
 		appMenu.Append(menu.EditMenu())
 	} else {
 		editMenu := appMenu.AddSubmenu("編集")
-		editMenu.AddText("取り消し", nil, func(_ *menu.CallbackData) { app.emit("menu:undo") })
-		editMenu.AddText("やり直し", nil, func(_ *menu.CallbackData) { app.emit("menu:redo") })
+		undoItem := editMenu.AddText("取り消し\tCtrl+Z", nil, func(_ *menu.CallbackData) { app.emit("menu:undo") })
+		redoItem := editMenu.AddText("やり直し\tCtrl+Y", nil, func(_ *menu.CallbackData) { app.emit("menu:redo") })
 		editMenu.AddSeparator()
-		editMenu.AddText("切り取り", nil, func(_ *menu.CallbackData) { app.emit("menu:cut") })
-		editMenu.AddText("コピー", nil, func(_ *menu.CallbackData) { app.emit("menu:copy") })
-		editMenu.AddText("貼り付け", nil, func(_ *menu.CallbackData) { app.emit("menu:paste") })
-		editMenu.AddText("すべて選択", nil, func(_ *menu.CallbackData) { app.emit("menu:selectAll") })
+		cutItem := editMenu.AddText("切り取り\tCtrl+X", nil, func(_ *menu.CallbackData) { app.emit("menu:cut") })
+		editMenu.AddText("コピー\tCtrl+C", nil, func(_ *menu.CallbackData) { app.emit("menu:copy") })
+		pasteItem := editMenu.AddText("貼り付け\tCtrl+V", nil, func(_ *menu.CallbackData) { app.emit("menu:paste") })
+		editMenu.AddText("すべて選択\tCtrl+A", nil, func(_ *menu.CallbackData) { app.emit("menu:selectAll") })
+		editMenu.AddSeparator()
+		editMenu.AddText("検索...\tCtrl+F", nil, func(_ *menu.CallbackData) { app.emit("menu:find") })
+
+		// 編集モードでのみ使える項目。初期は閲覧モード相当（セッション復元は常に閲覧）として無効から始め、
+		// フロントからのモード通知（SetEditMenuEnabled）で切り替える。
+		editOnlyMenuItems = []*menu.MenuItem{undoItem, redoItem, cutItem, pasteItem}
+		for _, it := range editOnlyMenuItems {
+			it.Disabled = true
+		}
 	}
 
 	viewMenu := appMenu.AddSubmenu("表示")

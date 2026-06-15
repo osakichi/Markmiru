@@ -15,7 +15,7 @@
   import { uiStore } from './lib/stores/ui.svelte'
   import { registerMenuHandlers } from './lib/menu'
   import { installLinkHandler } from './lib/links'
-  import { setDirtyState, getPendingFiles } from './lib/api/wails'
+  import { setDirtyState, setEditMenuEnabled, getPendingFiles } from './lib/api/wails'
   import { restoreSession, currentConfig, schedulePersist, openFileByPath } from './lib/commands'
   import { styleStore } from './lib/style/style.svelte'
   import { applyHighlightTheme } from './lib/style/highlight'
@@ -47,6 +47,13 @@
   $effect(() => {
     const hasUnsaved = tabsStore.tabs.some((t) => isDirty(t))
     void setDirtyState(hasUnsaved)
+  })
+
+  // アクティブタブのモードを Go に通知し、ネイティブ「編集」メニュー（Windows / Linux）の
+  // 編集専用項目（取り消し/やり直し/切り取り/貼り付け）の有効・無効を切り替える。
+  $effect(() => {
+    const canEdit = tabsStore.active?.mode === 'source'
+    void setEditMenuEnabled(canEdit)
   })
 
   // 設定（セッション・サイドバー状態・スタイル）を永続化。復元中・終了中は抑止。デバウンス保存。

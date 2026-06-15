@@ -13,6 +13,7 @@ import {
   ClipboardGetText,
   ClipboardSetText,
   SetDirtyState,
+  SetEditMenuEnabled,
   Quit,
   LoadConfig,
   SaveConfig,
@@ -91,6 +92,14 @@ export async function clipboardSetText(text: string): Promise<void> {
 /** 未保存の有無を Go に通知する（終了時の判定に使用）。 */
 export async function setDirtyState(hasUnsaved: boolean): Promise<void> {
   await SetDirtyState(hasUnsaved)
+}
+
+/**
+ * 「編集」メニュー（Windows / Linux の手組みメニュー）の編集専用項目の有効/無効を Go に通知する。
+ * 編集モードのとき canEdit=true。macOS 側は Go で no-op。
+ */
+export async function setEditMenuEnabled(canEdit: boolean): Promise<void> {
+  await SetEditMenuEnabled(canEdit)
 }
 
 /** アプリを終了する。 */
