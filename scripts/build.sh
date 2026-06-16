@@ -62,3 +62,27 @@ rm -rf "$root/frontend/dist"
 
 # -clean で build/bin を先に一掃し、古い実行バイナリ/成果物を残さない。
 "$wails" build -clean -ldflags "-X main.version=$sha"
+
+# 配布用 ZIP を dist/ に作成する（配布方針＝各 OS とも単純な ZIP を配るだけ）。
+# 名前: Markmiru-<sha>-<os>-<arch>-<yyyymmdd>.zip
+#   - <sha>      = 上のバージョンと同じ git ショート SHA（dirty 時は -dirty）
+#   - <yyyymmdd> = この ZIP を作成した日付
+# dist/ は git 管理外（配布物はコミットしない）。ビルド成功時のみここへ到達する（set -e）。
+date_stamp="$(date +%Y%m%d)"
+dist_dir="$root/dist"
+mkdir -p "$dist_dir"
+os="$(uname -s)"
+arch="$(uname -m)"
+if [ "$os" = "Darwin" ]; then
+  # macOS: .app フォルダごと配布。ditto で固める（シンボリックリンク・実行権限を保持。
+  # 素の zip や非 macOS 上での圧縮はバンドルを壊すため不可）。
+  zip_path="$dist_dir/Markmiru-$sha-darwin-$arch-$date_stamp.zip"
+  rm -f "$zip_path"
+  ditto -c -k --keepParent "$root/build/bin/Markmiru.app" "$zip_path"
+  echo "Packaged: $zip_path"
+else
+  # Linux: 配布方式は AppImage を「仮決め」（真の自己完結。WebKitGTK 等を同梱）。
+  # 最終決定は Linux 対応に着手する際に行う。AppImage 生成（linuxdeploy 等）は未実装・未検証のため、
+  # 現時点では ZIP を作成しない（バイナリは build/bin/Markmiru に残る）。
+  echo "Linux packaging is tentatively AppImage and not yet implemented; skipping ZIP. (Linux is unverified.)"
+fi

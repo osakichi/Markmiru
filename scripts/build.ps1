@@ -75,3 +75,18 @@ finally {
   $restored = [regex]::Replace($original, $pvRegex, '${1}"dev"')
   [System.IO.File]::WriteAllText($wailsJson, $restored)
 }
+
+# Package the executable into a distributable ZIP under dist/ (created if missing).
+# Distribution policy: ship a simple ZIP containing just the .exe (Windows).
+# Name: Markmiru-<sha>-windows-amd64-<yyyymmdd>.zip
+#   - <sha>       = same git short SHA used as the version above (with -dirty if applicable)
+#   - <yyyymmdd>  = the date this ZIP is produced
+# dist/ is git-ignored (distributables are not committed). Runs only on a successful build
+# (a build failure throws above and stops the script before reaching here).
+$dateStamp = Get-Date -Format 'yyyyMMdd'
+$distDir = Join-Path $root 'dist'
+New-Item -ItemType Directory -Force -Path $distDir | Out-Null
+$zipPath = Join-Path $distDir "Markmiru-$sha-windows-amd64-$dateStamp.zip"
+if (Test-Path $zipPath) { Remove-Item -Force $zipPath }
+Compress-Archive -Path (Join-Path $root 'build\bin\Markmiru.exe') -DestinationPath $zipPath
+Write-Host "Packaged: $zipPath"
