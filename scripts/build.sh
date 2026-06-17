@@ -64,7 +64,7 @@ rm -rf "$root/frontend/dist"
 "$wails" build -clean -ldflags "-X main.version=$sha"
 
 # 配布用 ZIP を dist/ に作成する（配布方針＝各 OS とも単純な ZIP を配るだけ）。
-# 名前: Markmiru-<sha>-<os>-<arch>-<yyyymmdd>.zip
+# 名前: Markmiru-<platform>-<arch>-<sha>-<yyyymmdd>.zip
 #   - <sha>      = 上のバージョンと同じ git ショート SHA（dirty 時は -dirty）
 #   - <yyyymmdd> = この ZIP を作成した日付
 # dist/ は git 管理外（配布物はコミットしない）。ビルド成功時のみここへ到達する（set -e）。
@@ -76,7 +76,7 @@ arch="$(uname -m)"
 if [ "$os" = "Darwin" ]; then
   # macOS: .app フォルダごと配布。ditto で固める（シンボリックリンク・実行権限を保持。
   # 素の zip や非 macOS 上での圧縮はバンドルを壊すため不可）。
-  zip_path="$dist_dir/Markmiru-$sha-darwin-$arch-$date_stamp.zip"
+  zip_path="$dist_dir/Markmiru-darwin-$arch-$sha-$date_stamp.zip"
   rm -f "$zip_path"
   ditto -c -k --keepParent "$root/build/bin/Markmiru.app" "$zip_path"
   echo "Packaged: $zip_path"

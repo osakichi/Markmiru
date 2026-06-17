@@ -214,7 +214,7 @@ Go・Node.js・Wails CLI の導入は全 OS で共通です。これに加えて
    - フロントエンドの依存取得（`npm ci`＝ロックどおりに厳密インストールし `package-lock.json` を書き換えない）・ビルド（`npm run build`）・Go バインディング生成は **Wails が自動で実行**します。
    - ビルドスクリプトは実行時に node/npm が固定版（**Node 24 系・npm 11 系**）かを検査し、不一致なら明示メッセージで停止します（Volta 導入済みなら自動で固定版が使われます）。
    - 成果物は `build/bin/` に出力されます（ファイル名は OS により異なる。後述）。
-   - 続けて**配布用アーカイブを `dist/` に出力**します（命名: `Markmiru-<sha>-<os>-<arch>-<yyyymmdd>.zip`。`<sha>` は上記バージョンと同じ git ショート SHA、`<yyyymmdd>` は作成日）。Windows は `.exe` のみ・macOS は `.app` ごとを ZIP 化。**Linux 用アーカイブは将来対応予定**で現状は作成しません（バイナリは `build/bin/` に残ります）。配布方針は「[インストール方法](#インストール方法)」参照。
+   - 続けて**配布用アーカイブを `dist/` に出力**します（命名: `Markmiru-<platform>-<arch>-<sha>-<yyyymmdd>.zip`。`<sha>` は上記バージョンと同じ git ショート SHA、`<yyyymmdd>` は作成日）。Windows は `.exe` のみ・macOS は `.app` ごとを ZIP 化。**Linux 用アーカイブは将来対応予定**で現状は作成しません（バイナリは `build/bin/` に残ります）。配布方針は「[インストール方法](#インストール方法)」参照。
    - 初回ビルドは Go モジュール・npm パッケージの取得が走るため時間がかかります（ネットワーク接続が必要）。2 回目以降はキャッシュにより短縮されます。
 
 > **`-clean` / `-debug` / `-platform` / `-tags` 等の `wails build` オプション**を使う場合は、ビルドスクリプトを介さず `wails build <オプション>` を直接実行してください（その場合バージョンは `dev`）。バージョンも埋め込みたいときは `-ldflags "-X main.version=<任意>"` を併用します。

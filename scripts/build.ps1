@@ -78,7 +78,7 @@ finally {
 
 # Package the executable into a distributable ZIP under dist/ (created if missing).
 # Distribution policy: ship a simple ZIP containing just the .exe (Windows).
-# Name: Markmiru-<sha>-windows-amd64-<yyyymmdd>.zip
+# Name: Markmiru-windows-amd64-<sha>-<yyyymmdd>.zip
 #   - <sha>       = same git short SHA used as the version above (with -dirty if applicable)
 #   - <yyyymmdd>  = the date this ZIP is produced
 # dist/ is git-ignored (distributables are not committed). Runs only on a successful build
@@ -86,7 +86,7 @@ finally {
 $dateStamp = Get-Date -Format 'yyyyMMdd'
 $distDir = Join-Path $root 'dist'
 New-Item -ItemType Directory -Force -Path $distDir | Out-Null
-$zipPath = Join-Path $distDir "Markmiru-$sha-windows-amd64-$dateStamp.zip"
+$zipPath = Join-Path $distDir "Markmiru-windows-amd64-$sha-$dateStamp.zip"
 if (Test-Path $zipPath) { Remove-Item -Force $zipPath }
 Compress-Archive -Path (Join-Path $root 'build\bin\Markmiru.exe') -DestinationPath $zipPath
 Write-Host "Packaged: $zipPath"
