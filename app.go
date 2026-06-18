@@ -46,6 +46,7 @@ func NewApp() *App {
 // so we can call the runtime methods
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	a.restoreWindowSize()
 }
 
 // GetPendingFiles はフロントエンド初期化完了後に一度だけ呼ぶ。
@@ -151,6 +152,30 @@ func (a *App) beforeClose(ctx context.Context) bool {
 	}
 	a.emit("app:request-quit")
 	return true
+}
+
+// restoreWindowSize は前回保存した通常時のウィンドウサイズを runtime.WindowSetSize で復元する。
+//
+// 復元を「起動オプション（options.Width/Height）」ではなく WindowSetSize で行うのが要点。
+// 保存に使う WindowGetSize と復元に使う WindowSetSize は、どのプラットフォームでも同一の基準
+// （同じ次元）を指すため対称で、保存→復元の往復で値が安定する。
+// 一方 options.Width/Height は macOS ではコンテンツ領域（タイトルバー除く）として解釈される
+// のに対し WindowGetSize はフレーム（タイトルバー込み）を返すため非対称で、起動オプション経由で
+// 復元すると開閉のたびにタイトルバー分だけウィンドウが肥大化する（macOS 固有）。この経路に
+// 揃えることで、プラットフォーム分岐なしの共通コードで肥大化を解消する。
+//
+// 最大化起動時（WindowStartState=Maximised）はサイズを上書きしない（通常サイズは保持済み）。
+func (a *App) restoreWindowSize() {
+	if a.ctx == nil {
+		return
+	}
+	cfg, err := a.LoadConfig()
+	if err != nil || cfg.WindowMaximised {
+		return
+	}
+	if cfg.WindowWidth > 0 && cfg.WindowHeight > 0 {
+		runtime.WindowSetSize(a.ctx, cfg.WindowWidth, cfg.WindowHeight)
+	}
 }
 
 // saveWindowState は現在のウィンドウサイズ／最大化状態を config に保存する。
