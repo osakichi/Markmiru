@@ -53,7 +53,7 @@ function onClick(e: MouseEvent): void {
   // 再スクロールされないため、preventDefault して scrollIntoView で制御する。
   if (rawHref.startsWith('#')) {
     e.preventDefault()
-    // href は markdown-it により % エンコードされ得る（例: #mermaid-%E5%9B%B3）。
+    // href は Markdown 描画（goldmark）により % エンコードされ得る（例: #mermaid-%E5%9B%B3）。
     // 見出し id は素のスラッグ（例: mermaid-図）なのでデコードして突き合わせる。
     let id = rawHref.slice(1)
     try { id = decodeURIComponent(id) } catch { /* 不正なエンコードはそのまま使用 */ }

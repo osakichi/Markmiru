@@ -62,9 +62,9 @@
     schedulePersist(currentConfig())
   })
 
-  // コードブロックのハイライトテーマをアクティブスタイルの colorScheme に連動
+  // コードブロックのハイライトテーマをアクティブスタイルの colorScheme に連動（CSS は Go の chroma が生成）
   $effect(() => {
-    applyHighlightTheme(styleStore.active.colorScheme)
+    void applyHighlightTheme(styleStore.active.colorScheme)
   })
 
   // カスタム CSS（スタイル）を style 要素へ反映

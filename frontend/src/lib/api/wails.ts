@@ -6,6 +6,8 @@ import {
   ReadLicense,
   ReadReadme,
   ReadImageAsDataURL,
+  RenderHTML,
+  HighlightCSS,
   SaveFile,
   SaveFileDialog,
   ExportStyleDialog,
@@ -129,4 +131,29 @@ export async function getPendingFiles(): Promise<string[]> {
  */
 export async function readImageAsDataURL(baseDir: string, src: string): Promise<string> {
   return (await ReadImageAsDataURL(baseDir, src)) ?? ''
+}
+
+/** 閲覧モードの描画結果。hasRemoteImages はリモート画像が含まれていたか。 */
+export interface RenderResult {
+  html: string
+  hasRemoteImages: boolean
+}
+
+/**
+ * Markdown を安全な HTML へ変換する（Go の render パイプライン）。
+ * mermaid は <pre class="mermaid"> プレースホルダのまま返る（描画は runMermaid）。
+ * baseDir はローカル画像解決の基点（空なら data URI 化しない）。
+ */
+export async function renderHTML(
+  content: string,
+  baseDir: string,
+  allowRemoteImages: boolean
+): Promise<RenderResult> {
+  const r = await RenderHTML(content, baseDir, allowRemoteImages)
+  return { html: r?.html ?? '', hasRemoteImages: r?.hasRemoteImages ?? false }
+}
+
+/** コードハイライト用 CSS（chroma クラス）を colorScheme（'light'/'dark'）に応じて取得する。 */
+export async function highlightCSS(scheme: string): Promise<string> {
+  return (await HighlightCSS(scheme)) ?? ''
 }

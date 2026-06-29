@@ -11,6 +11,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"Markmiru/render"
+
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -388,4 +390,27 @@ func (a *App) SaveFile(path string, content string) (FileDoc, error) {
 		return FileDoc{}, err
 	}
 	return newFileDoc(path, content), nil
+}
+
+// RenderResult は RenderHTML の戻り値（閲覧モードの描画用）。
+type RenderResult struct {
+	HTML            string `json:"html"`
+	HasRemoteImages bool   `json:"hasRemoteImages"`
+}
+
+// RenderHTML は Markdown を安全な HTML へ変換して返す（閲覧モードの描画）。
+// mermaid は <pre class="mermaid"> プレースホルダのまま返り、描画は WebView の mermaid.js が担う。
+// baseDir はローカル画像解決の基点（空なら data URI 化しない）。allowRemoteImages が false なら
+// リモート画像は読み込まない。設計: docs/Go中心化移行設計.md §4
+func (a *App) RenderHTML(content, baseDir string, allowRemoteImages bool) RenderResult {
+	r, err := render.RenderMarkdown(content, render.Options{BaseDir: baseDir, AllowRemoteImages: allowRemoteImages})
+	if err != nil {
+		return RenderResult{}
+	}
+	return RenderResult{HTML: r.HTML, HasRemoteImages: r.HasRemoteImages}
+}
+
+// HighlightCSS はコードハイライト用 CSS（chroma クラス）を colorScheme（"light"/"dark"）に応じて返す。
+func (a *App) HighlightCSS(scheme string) string {
+	return render.HighlightCSS(scheme)
 }

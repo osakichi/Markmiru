@@ -1,7 +1,7 @@
 /*
  * 閲覧モード（プレビュー）のスタイル。値はスタイル由来の CSS 変数（--md-*）で制御する。
  * 設計: docs/スタイル設定設計.md §1, §2。
- * コードブロックのトークン配色は highlight.js テーマ（colorScheme 連動）が担当する。
+ * コードブロックのトークン配色は Go の chroma が生成する CSS（colorScheme 連動）が担当する。
  */
 .preview-scroll {
   height: 100%;
@@ -139,7 +139,7 @@
   border-radius: 4px;
 }
 
-/* コードブロック（背景はスタイル、トークン配色は highlight.js テーマ） */
+/* コードブロック（背景はスタイル、トークン配色は chroma 生成 CSS） */
 .markdown-body pre {
   margin: 0 0 1em;
   padding: 1em;

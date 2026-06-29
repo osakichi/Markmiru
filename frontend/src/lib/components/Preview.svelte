@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tick, onMount } from 'svelte'
-  import { renderMarkdown, runMermaid, resolveLocalImages } from '../markdown/renderer'
+  import { runMermaid } from '../markdown/renderer'
+  import { renderHTML } from '../api/wails'
   import { styleStore } from '../style/style.svelte'
   import { styleToVars, varsToStyleString } from '../style/styleDef'
   import { tabsStore } from '../stores/tabs.svelte'
@@ -198,28 +199,34 @@
   })
 
   // source・テーマ・リモート画像ポリシーに依存して再描画。
+  // 描画（Markdown→安全HTML、ローカル画像の data URI 化）は Go の render が担うため非同期。
   $effect(() => {
     const src = source
     const scheme = styleStore.active.colorScheme
     const policy = remoteImagePolicy
     const id = tabId
     const dir = fileDir
-    // 未確認（undefined）または 'block' の間はリモート画像を読み込まない。
-    const result = renderMarkdown(src, { allowRemoteImages: policy === 'allow' })
-    // colorScheme が変わったら HTML 文字列も必ず変化させ、{@html} の再描画
-    // → mermaid プレースホルダ再生成 → 新テーマで再描画 を確実に行う。
-    html = result.html + `<!--markmiru-scheme:${scheme}-->`
-    tick().then(() => {
-      if (!container) return
+    let cancelled = false
+    void (async () => {
+      // 未確認（undefined）または 'block' の間はリモート画像を読み込まない。
+      const result = await renderHTML(src, dir, policy === 'allow')
+      if (cancelled) return
+      // colorScheme が変わったら HTML 文字列も必ず変化させ、{@html} の再描画
+      // → mermaid プレースホルダ再生成 → 新テーマで再描画 を確実に行う。
+      html = result.html + `<!--markmiru-scheme:${scheme}-->`
+      await tick()
+      if (cancelled || !container) return
       void runMermaid(container, scheme)
-      void resolveLocalImages(container, dir)
       // 再描画で旧 Range は無効になるため、検索中なら作り直す。
       if (viewFind.open && findQuery) computeMatches()
-    })
-    // リモート画像を含み未確認の場合、ファイルごとに一度だけ表示可否を確認する。
-    // セッション復元中（restoring）は commands.restoreSession が一括処理するためスキップ。
-    if (result.hasRemoteImages && policy === undefined && id && !uiStore.restoring) {
-      void confirmRemoteImages(id)
+      // リモート画像を含み未確認の場合、ファイルごとに一度だけ表示可否を確認する。
+      // セッション復元中（restoring）は commands.restoreSession が一括処理するためスキップ。
+      if (result.hasRemoteImages && policy === undefined && id && !uiStore.restoring) {
+        void confirmRemoteImages(id)
+      }
+    })()
+    return () => {
+      cancelled = true
     }
   })
 
