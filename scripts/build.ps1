@@ -1,12 +1,8 @@
 # Markmiru build script (Windows / PowerShell).
 #
-# Produces a fully fresh build where the frontend, the Go backend, and the final
-# executable all reflect the CURRENT source state in one shot:
-#   - The previously generated frontend bundle (frontend/dist) is removed first, so the
-#     embedded assets (//go:embed all:frontend/dist) cannot carry over stale files.
-#   - wails build then re-runs "npm run build" to regenerate frontend/dist from source,
-#     and -clean wipes build/bin so no old artifact is left behind.
-#   - Go is recompiled by wails build (its content-addressed cache always tracks source).
+# Go-only build: the app is Go-SSR (Wails AssetServer.Handler). There is no Node/npm/Vite
+# frontend to install or bundle. wails build compiles the Go backend and packages the exe;
+# -clean wipes build/bin so no stale artifact survives. Go's content-addressed cache tracks source.
 #
 # Embeds the git short SHA as the version:
 #   - Runtime (shown at the end of the "About Markmiru" tab): Go ldflags (-X main.version=<sha>)
@@ -25,27 +21,6 @@ Set-Location $root
 $wailsJson = Join-Path $root 'wails.json'
 $wails = Join-Path $env:USERPROFILE 'go\bin\wails.exe'
 
-# Verify the active Node/npm match the versions pinned in frontend/package.json (volta field).
-# With Volta installed these are selected automatically; without it this stops early with a
-# clear message instead of a cryptic engine-strict error during the frontend install.
-$pkg = Get-Content (Join-Path $root 'frontend\package.json') -Raw | ConvertFrom-Json
-$wantNode = $pkg.volta.node
-$wantNpm = $pkg.volta.npm
-# Probe node/npm from inside frontend/ so the check reflects the toolchain the frontend
-# install actually uses. Volta (and other cwd-based managers) pick the version from the
-# nearest package.json carrying a volta/engines pin, which lives in frontend/ (not the repo root).
-Push-Location (Join-Path $root 'frontend')
-try {
-  $haveNode = ((& node -v) -replace '^v', '').Trim()
-  $haveNpm = (& npm -v).Trim()
-}
-finally {
-  Pop-Location
-}
-if ($haveNode.Split('.')[0] -ne $wantNode.Split('.')[0] -or $haveNpm.Split('.')[0] -ne $wantNpm.Split('.')[0]) {
-  throw "Node $wantNode / npm $wantNpm required (found node $haveNode / npm $haveNpm). Install Volta (https://volta.sh) so the pinned versions are used automatically, or install matching versions manually."
-}
-
 # Version = git short SHA, with "-dirty" if the working tree is not clean.
 $sha = (& git rev-parse --short HEAD | Out-String).Trim()
 if (-not $sha) { throw 'git rev-parse failed (empty SHA)' }
@@ -59,11 +34,6 @@ try {
   # Replace only the value of info.productVersion (keep the rest of the file as-is).
   $patched = [regex]::Replace($original, $pvRegex, '${1}"' + $sha + '"')
   [System.IO.File]::WriteAllText($wailsJson, $patched)
-
-  # Remove the previously generated frontend bundle so embedded assets are always rebuilt
-  # from the current source (wails build re-runs "npm run build" to regenerate it).
-  $dist = Join-Path $root 'frontend\dist'
-  if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
 
   # -clean wipes build/bin first so no stale executable/artifact survives the build.
   & $wails build -clean -ldflags "-X main.version=$sha"

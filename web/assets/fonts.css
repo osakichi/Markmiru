@@ -1,0 +1,171 @@
+/* 同梱フォント（Noto Sans JP / Serif JP / Sans Mono, OFL）。@fontsource のサブセット別 @font-face を
+   web/assets/fonts/ へ vendoring（woff2 のみ・url を /assets/fonts/ へ書換）。生成: scripts で再生成可。 */
+/* noto-sans-jp-latin-400-normal */
+@font-face {
+  font-family: 'Noto Sans JP';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url(/assets/fonts/noto-sans-jp-latin-400-normal.woff2) format('woff2');
+}/* noto-sans-jp-latin-ext-400-normal */
+@font-face {
+  font-family: 'Noto Sans JP';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url(/assets/fonts/noto-sans-jp-latin-ext-400-normal.woff2) format('woff2');
+}/* noto-sans-jp-cyrillic-400-normal */
+@font-face {
+  font-family: 'Noto Sans JP';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url(/assets/fonts/noto-sans-jp-cyrillic-400-normal.woff2) format('woff2');
+}/* noto-sans-jp-vietnamese-400-normal */
+@font-face {
+  font-family: 'Noto Sans JP';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url(/assets/fonts/noto-sans-jp-vietnamese-400-normal.woff2) format('woff2');
+}/* noto-sans-jp-japanese-400-normal */
+@font-face {
+  font-family: 'Noto Sans JP';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url(/assets/fonts/noto-sans-jp-japanese-400-normal.woff2) format('woff2');
+}/* noto-sans-jp-latin-700-normal */
+@font-face {
+  font-family: 'Noto Sans JP';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url(/assets/fonts/noto-sans-jp-latin-700-normal.woff2) format('woff2');
+}/* noto-sans-jp-latin-ext-700-normal */
+@font-face {
+  font-family: 'Noto Sans JP';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url(/assets/fonts/noto-sans-jp-latin-ext-700-normal.woff2) format('woff2');
+}/* noto-sans-jp-cyrillic-700-normal */
+@font-face {
+  font-family: 'Noto Sans JP';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url(/assets/fonts/noto-sans-jp-cyrillic-700-normal.woff2) format('woff2');
+}/* noto-sans-jp-vietnamese-700-normal */
+@font-face {
+  font-family: 'Noto Sans JP';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url(/assets/fonts/noto-sans-jp-vietnamese-700-normal.woff2) format('woff2');
+}/* noto-sans-jp-japanese-700-normal */
+@font-face {
+  font-family: 'Noto Sans JP';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url(/assets/fonts/noto-sans-jp-japanese-700-normal.woff2) format('woff2');
+}/* noto-serif-jp-latin-400-normal */
+@font-face {
+  font-family: 'Noto Serif JP';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url(/assets/fonts/noto-serif-jp-latin-400-normal.woff2) format('woff2');
+}/* noto-serif-jp-latin-ext-400-normal */
+@font-face {
+  font-family: 'Noto Serif JP';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url(/assets/fonts/noto-serif-jp-latin-ext-400-normal.woff2) format('woff2');
+}/* noto-serif-jp-cyrillic-400-normal */
+@font-face {
+  font-family: 'Noto Serif JP';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url(/assets/fonts/noto-serif-jp-cyrillic-400-normal.woff2) format('woff2');
+}/* noto-serif-jp-vietnamese-400-normal */
+@font-face {
+  font-family: 'Noto Serif JP';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url(/assets/fonts/noto-serif-jp-vietnamese-400-normal.woff2) format('woff2');
+}/* noto-serif-jp-japanese-400-normal */
+@font-face {
+  font-family: 'Noto Serif JP';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url(/assets/fonts/noto-serif-jp-japanese-400-normal.woff2) format('woff2');
+}/* noto-serif-jp-latin-700-normal */
+@font-face {
+  font-family: 'Noto Serif JP';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url(/assets/fonts/noto-serif-jp-latin-700-normal.woff2) format('woff2');
+}/* noto-serif-jp-latin-ext-700-normal */
+@font-face {
+  font-family: 'Noto Serif JP';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url(/assets/fonts/noto-serif-jp-latin-ext-700-normal.woff2) format('woff2');
+}/* noto-serif-jp-cyrillic-700-normal */
+@font-face {
+  font-family: 'Noto Serif JP';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url(/assets/fonts/noto-serif-jp-cyrillic-700-normal.woff2) format('woff2');
+}/* noto-serif-jp-vietnamese-700-normal */
+@font-face {
+  font-family: 'Noto Serif JP';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url(/assets/fonts/noto-serif-jp-vietnamese-700-normal.woff2) format('woff2');
+}/* noto-serif-jp-japanese-700-normal */
+@font-face {
+  font-family: 'Noto Serif JP';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url(/assets/fonts/noto-serif-jp-japanese-700-normal.woff2) format('woff2');
+}/* noto-sans-mono-latin-400-normal */
+@font-face {
+  font-family: 'Noto Sans Mono';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url(/assets/fonts/noto-sans-mono-latin-400-normal.woff2) format('woff2');
+}/* noto-sans-mono-latin-ext-400-normal */
+@font-face {
+  font-family: 'Noto Sans Mono';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url(/assets/fonts/noto-sans-mono-latin-ext-400-normal.woff2) format('woff2');
+}/* noto-sans-mono-latin-700-normal */
+@font-face {
+  font-family: 'Noto Sans Mono';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url(/assets/fonts/noto-sans-mono-latin-700-normal.woff2) format('woff2');
+}/* noto-sans-mono-latin-ext-700-normal */
+@font-face {
+  font-family: 'Noto Sans Mono';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url(/assets/fonts/noto-sans-mono-latin-ext-700-normal.woff2) format('woff2');
+}

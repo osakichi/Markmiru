@@ -27,6 +27,21 @@ func TestGFMTableAndTaskList(t *testing.T) {
 	}
 }
 
+func TestFootnotes(t *testing.T) {
+	src := "本文[^1]。\n\n[^1]: 脚注の内容。\n"
+	html := mustRender(t, src, Options{}).HTML
+	// 参照（sup#fnref → #fn へのリンク）と脚注本体（li#fn）が bluemonday を通過して残る。
+	if !strings.Contains(html, `href="#fn:1"`) || !strings.Contains(html, `id="fnref:1"`) {
+		t.Errorf("footnote reference not rendered/kept: %s", html)
+	}
+	if !strings.Contains(html, `id="fn:1"`) || !strings.Contains(html, `href="#fnref:1"`) {
+		t.Errorf("footnote body/backref not rendered/kept: %s", html)
+	}
+	if !strings.Contains(html, "脚注の内容") {
+		t.Errorf("footnote text missing: %s", html)
+	}
+}
+
 func TestHeadingSlugAndDedup(t *testing.T) {
 	html := mustRender(t, "# Hello World\n\n## Hello World\n", Options{}).HTML
 	if !strings.Contains(html, `id="hello-world"`) {

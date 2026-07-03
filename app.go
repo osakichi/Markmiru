@@ -3,15 +3,10 @@ package main
 import (
 	"context"
 	_ "embed"
-	"encoding/base64"
-	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"sync/atomic"
-
-	"Markmiru/render"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -31,12 +26,16 @@ var readmeMarkdown string
 // App struct
 type App struct {
 	ctx          context.Context
-	hasUnsaved   atomic.Bool
 	quitting     atomic.Bool
 	startupFiles []string   // コマンドライン引数のファイルパス（main から設定）
-	pendingMu    sync.Mutex // pendingFiles / frontReady を保護
-	pendingFiles []string   // フロント準備前に IPC 経由で届いたファイルパス
-	frontReady   bool       // GetPendingFiles 呼出後に true になる（pendingMu で保護）
+	pendingMu    sync.Mutex // frontReady を保護
+	frontReady   bool       // フロント（glue）が IPC を受け取れる状態か（main の起動シードで true・pendingMu で保護）
+
+	// unsavedChecker は未保存タブの有無を返す（main が web.State.HasUnsaved を注入）。終了時の判定に使う。
+	unsavedChecker func() bool
+	// persistSession は現在のセッション（開いているファイル・スタイル・サイドバー）を config へ保存する
+	// （main が注入）。ウィンドウを閉じる直前に呼ぶ。
+	persistSession func()
 }
 
 // NewApp creates a new App application struct
@@ -51,32 +50,16 @@ func (a *App) startup(ctx context.Context) {
 	a.restoreWindowSize()
 }
 
-// GetPendingFiles はフロントエンド初期化完了後に一度だけ呼ぶ。
-// 起動引数（コマンドライン）＋ IPC 早期受信ファイルをまとめて返し、内部リストをクリアする。
-// 呼出後は frontReady = true となり、以降の IPC ファイルはイベントで即時配信される。
-func (a *App) GetPendingFiles() []string {
-	a.pendingMu.Lock()
-	defer a.pendingMu.Unlock()
-	a.frontReady = true
-	all := make([]string, 0, len(a.startupFiles)+len(a.pendingFiles))
-	all = append(all, a.startupFiles...)
-	all = append(all, a.pendingFiles...)
-	a.startupFiles = nil
-	a.pendingFiles = nil
-	return all
-}
-
-// openFileFromIPC は IPC 経由で受け取ったパスをフロントへ渡す。
-// フロント準備前に届いた場合はキューに積み、準備完了後（GetPendingFiles 呼出後）はイベントで即時配信する。
+// openFileFromIPC は IPC（2つ目の起動）で受け取ったパスをフロント（glue）へ渡し、開かせる。
+// 準備後はイベント（ipc:open-file）で即時配信する。準備前（起動直後の一瞬）は破棄する
+// ——単一インスタンスでは2つ目の起動時に1つ目は既に稼働中のため、取りこぼしは実質発生しない。
 func (a *App) openFileFromIPC(path string) {
 	a.pendingMu.Lock()
-	if !a.frontReady {
-		a.pendingFiles = append(a.pendingFiles, path)
-		a.pendingMu.Unlock()
-		return
-	}
+	ready := a.frontReady
 	a.pendingMu.Unlock()
-	runtime.EventsEmit(a.ctx, "ipc:open-file", path)
+	if ready {
+		runtime.EventsEmit(a.ctx, "ipc:open-file", path)
+	}
 }
 
 // bringToFront はウィンドウを前面に表示する。IPC 受信時に呼ぶ。
@@ -96,15 +79,10 @@ func (a *App) emit(event string) {
 	runtime.EventsEmit(a.ctx, event)
 }
 
-// SetDirtyState はフロントから未保存有無を通知する（終了時に確認ループを起動するか判断する）。
-func (a *App) SetDirtyState(hasUnsaved bool) {
-	a.hasUnsaved.Store(hasUnsaved)
-}
-
 // SetEditMenuEnabled は手組み「編集」メニュー（Windows / Linux）の編集専用項目
 // （取り消し/やり直し/切り取り/貼り付け）の有効・無効を、編集可能か（編集モードか）で切り替える。
-// フロントがアクティブタブのモード変化時に呼ぶ。macOS はネイティブ編集メニューが文脈に応じて
-// 自動制御するため何もしない。
+// サーバが本文描画のたびにアクティブモードに応じて呼ぶ（web の syncEditMenu）。macOS は
+// ネイティブ編集メニューが文脈に応じて自動制御するため何もしない。
 func (a *App) SetEditMenuEnabled(canEdit bool) {
 	if isMacOS || a.ctx == nil {
 		return
@@ -115,6 +93,14 @@ func (a *App) SetEditMenuEnabled(canEdit bool) {
 	runtime.MenuUpdateApplicationMenu(a.ctx)
 }
 
+// OpenExternalURL は URL を OS の既定ブラウザ／メーラで開く（プレビュー内の外部リンク用）。
+// WebView 自体を外部 URL へ遷移させないための委譲先。呼び出し側でスキームを検証済みとする。
+func (a *App) OpenExternalURL(url string) {
+	if a.ctx != nil {
+		runtime.BrowserOpenURL(a.ctx, url)
+	}
+}
+
 // FocusWindow は WebView にキーボードフォーカスを与える。
 // Windows の WebView2 は起動直後クリックするまでキー入力が届かないため、
 // アプリ内ダイアログ表示時にフロントから呼ぶ（他 OS は no-op）。
@@ -122,38 +108,45 @@ func (a *App) FocusWindow() {
 	focusWebview()
 }
 
-// ClipboardGetText は OS クリップボードのテキストを返す（右クリックメニューの貼り付け用）。
-// ブラウザのクリップボード API 制限を避けるため、OS クリップボードを Go 経由で扱う。
-func (a *App) ClipboardGetText() (string, error) {
-	return runtime.ClipboardGetText(a.ctx)
-}
-
-// ClipboardSetText は OS クリップボードへテキストを書き込む（右クリックメニューのコピー/切り取り用）。
-func (a *App) ClipboardSetText(text string) error {
-	return runtime.ClipboardSetText(a.ctx, text)
-}
-
-// Quit はアプリを終了する（フロントの終了確認ループ完了後に呼ばれる）。
+// Quit はアプリを終了する（サーバ主導の終了確認ループが未保存を処理し終えた後、Host.Quit 経由で呼ばれる）。
 func (a *App) Quit() {
 	a.quitting.Store(true)
 	runtime.Quit(a.ctx)
 }
 
 // beforeClose はウィンドウを閉じる直前に呼ばれる。
-// 未保存があればフロントの終了確認ループ（タブごとの3択）を起動し、いったん閉じるのを中止する。
-// 実際に閉じる経路（return false）では、直前に現在のウィンドウサイズを保存する。
+// 未保存があれば終了確認ループ（サーバ主導・タブごとの3択）を起動し、いったん閉じるのを中止する
+// （app:request-quit を発火 → glue が /quit/request を叩き、web が未保存タブを順に確認する）。
+// 実際に閉じる経路（return false）では、直前にセッションとウィンドウサイズを保存する。
 // 設計: docs/アーキテクチャ・画面設計.md §5.3（タブごと確認方式）
 func (a *App) beforeClose(ctx context.Context) bool {
 	if a.quitting.Load() {
+		a.persistSessionState()
 		a.saveWindowState()
 		return false
 	}
-	if !a.hasUnsaved.Load() {
+	if !a.anyUnsaved() {
+		a.persistSessionState()
 		a.saveWindowState()
 		return false
 	}
 	a.emit("app:request-quit")
 	return true
+}
+
+// persistSessionState は注入済みなら現在のセッションを config へ保存する（Go-SSR ビルドのみ）。
+func (a *App) persistSessionState() {
+	if a.persistSession != nil {
+		a.persistSession()
+	}
+}
+
+// anyUnsaved は未保存タブがあるか（注入された unsavedChecker＝サーバ状態）を返す。
+func (a *App) anyUnsaved() bool {
+	if a.unsavedChecker != nil {
+		return a.unsavedChecker()
+	}
+	return false
 }
 
 // restoreWindowSize は前回保存した通常時のウィンドウサイズを runtime.WindowSetSize で復元する。
@@ -182,7 +175,7 @@ func (a *App) restoreWindowSize() {
 
 // saveWindowState は現在のウィンドウサイズ／最大化状態を config に保存する。
 // 最大化中は通常サイズ（復元サイズ）を上書きせず、最大化フラグのみ更新する。
-// ウィンドウ状態は Go 側のこの経路だけが更新する（フロントの SaveConfig は既存値を保持）。
+// ウィンドウ状態は Go 側のこの経路だけが更新する（セッション保存 persistSession は既存のウィンドウ値を保持）。
 func (a *App) saveWindowState() {
 	if a.ctx == nil {
 		return
@@ -316,101 +309,10 @@ func (a *App) ImportStyleDialog() (string, error) {
 	return string(data), nil
 }
 
-// imageMaxBytes はローカル画像として読み込む最大サイズ（50 MB）。
-const imageMaxBytes = 50 * 1024 * 1024
-
-// imageMIME はファイル拡張子から MIME タイプを返す。
-func imageMIME(ext string) string {
-	switch strings.ToLower(ext) {
-	case ".png":
-		return "image/png"
-	case ".jpg", ".jpeg":
-		return "image/jpeg"
-	case ".gif":
-		return "image/gif"
-	case ".webp":
-		return "image/webp"
-	case ".svg":
-		return "image/svg+xml"
-	case ".bmp":
-		return "image/bmp"
-	case ".ico":
-		return "image/x-icon"
-	case ".avif":
-		return "image/avif"
-	default:
-		return "application/octet-stream"
-	}
-}
-
-// resolveImagePath は src を baseDir を基点とした絶対パスに解決する。
-//   - 絶対パス（filepath.IsAbs == true, 例: C:\... /home/...）: そのまま使用
-//   - ルート相対パス（\ または / 始まりでボリューム名なし, 例: \Users\... /Users/...）:
-//     baseDir のボリューム名（Windows では "C:" 等, 他 OS では ""）を先頭に付与して絶対化
-//   - 相対パス（例: ./img.png）: baseDir と結合
-func resolveImagePath(baseDir, src string) string {
-	if filepath.IsAbs(src) {
-		return filepath.Clean(src)
-	}
-	if len(src) > 0 && os.IsPathSeparator(src[0]) {
-		// ルート相対: ボリューム名（Windows: "C:" / 他 OS: ""）を補完する
-		vol := filepath.VolumeName(baseDir)
-		return filepath.Clean(vol + src)
-	}
-	return filepath.Clean(filepath.Join(baseDir, src))
-}
-
-// ReadImageAsDataURL はローカル画像ファイルを読み込み、data URI として返す。
-// src が相対パスの場合は baseDir を基点に解決する。
-// ファイルが存在しない場合は空文字を返す（エラーにしない）。
-func (a *App) ReadImageAsDataURL(baseDir, src string) (string, error) {
-	absPath := resolveImagePath(baseDir, src)
-
-	info, err := os.Stat(absPath)
-	if err != nil {
-		return "", nil // ファイル不在は空文字で返す
-	}
-	if info.Size() > imageMaxBytes {
-		return "", fmt.Errorf("image too large: %d bytes", info.Size())
-	}
-
-	data, err := os.ReadFile(absPath)
-	if err != nil {
-		return "", nil
-	}
-
-	mime := imageMIME(filepath.Ext(absPath))
-	encoded := base64.StdEncoding.EncodeToString(data)
-	return fmt.Sprintf("data:%s;base64,%s", mime, encoded), nil
-}
-
 // SaveFile は内容を指定パスへ UTF-8 で書き込み、保存後の FileDoc を返す。
 func (a *App) SaveFile(path string, content string) (FileDoc, error) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return FileDoc{}, err
 	}
 	return newFileDoc(path, content), nil
-}
-
-// RenderResult は RenderHTML の戻り値（閲覧モードの描画用）。
-type RenderResult struct {
-	HTML            string `json:"html"`
-	HasRemoteImages bool   `json:"hasRemoteImages"`
-}
-
-// RenderHTML は Markdown を安全な HTML へ変換して返す（閲覧モードの描画）。
-// mermaid は <pre class="mermaid"> プレースホルダのまま返り、描画は WebView の mermaid.js が担う。
-// baseDir はローカル画像解決の基点（空なら data URI 化しない）。allowRemoteImages が false なら
-// リモート画像は読み込まない。設計: docs/Go中心化移行設計.md §4
-func (a *App) RenderHTML(content, baseDir string, allowRemoteImages bool) RenderResult {
-	r, err := render.RenderMarkdown(content, render.Options{BaseDir: baseDir, AllowRemoteImages: allowRemoteImages})
-	if err != nil {
-		return RenderResult{}
-	}
-	return RenderResult{HTML: r.HTML, HasRemoteImages: r.HasRemoteImages}
-}
-
-// HighlightCSS はコードハイライト用 CSS（chroma クラス）を colorScheme（"light"/"dark"）に応じて返す。
-func (a *App) HighlightCSS(scheme string) string {
-	return render.HighlightCSS(scheme)
 }

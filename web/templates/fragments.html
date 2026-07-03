@@ -1,0 +1,212 @@
+{{/* タブバー中身: サイドバートグル＋タブ一覧＋新規ボタン。 */}}
+{{define "tabbar-inner"}}<button type="button" class="tb-btn" hx-post="/sidebar/toggle" hx-target="#sidebar" hx-swap="outerHTML" title="サイドバー">☰</button><button type="button" class="tb-btn" hx-post="/tabs/open" hx-target="#content" title="開く">開く</button>{{template "tabs" .}}<button type="button" class="tb-btn" hx-post="/tabs/new" hx-target="#content" title="新規">＋</button><span class="tb-right">{{if and .ActiveID (not .ActiveReadOnly)}}<button type="button" class="tb-btn" hx-post="/tabs/{{.ActiveID}}/mode" hx-target="#content" title="閲覧/編集">{{if eq .ActiveMode "source"}}閲覧{{else}}編集{{end}}</button><button type="button" class="tb-btn" hx-post="/tabs/{{.ActiveID}}/save" hx-target="#content" title="保存">保存</button>{{end}}<button type="button" class="tb-btn" hx-post="/settings/toggle" hx-target="#settings" hx-swap="outerHTML" title="設定">設定</button><button type="button" class="tb-btn" hx-post="/doc/about" hx-target="#content" title="Markmiru について">About</button><button type="button" class="tb-btn" hx-post="/doc/license" hx-target="#content" title="ライセンス">ライセンス</button></span>{{end}}
+
+{{/* タブ一覧。各タブは「名前（クリックでアクティブ）」＋「×（閉じる）」。 */}}
+{{define "tabs"}}{{range .Tabs}}<span class="tab{{if .Active}} active{{end}}"><button type="button" class="tab-name" hx-post="/tabs/{{.ID}}/activate" hx-target="#content" title="{{.FileName}}">{{.FileName}}{{if .Dirty}} •{{end}}</button><button type="button" class="tab-close" hx-post="/tabs/{{.ID}}/close" hx-target="#content" title="閉じる">×</button></span>{{end}}{{end}}
+
+{{/* サイドバー中身（開いているファイル一覧）。 */}}
+{{define "sidebar-inner"}}<div class="sidebar-title">開いているファイル</div><ul class="file-list">{{range .Tabs}}<li class="file-item{{if .Active}} active{{end}}"><button type="button" hx-post="/tabs/{{.ID}}/activate" hx-target="#content" title="{{.FileName}}">{{.FileName}}</button></li>{{end}}</ul>{{end}}
+
+{{/* サイドバー要素（トグル応答＝outerHTML 差し替え）。 */}}
+{{define "sidebar"}}<aside id="sidebar"{{if not .SidebarOpen}} hidden{{end}}>{{template "sidebar-inner" .}}</aside>{{end}}
+
+{{/* 本文（閲覧）。CSS 変数は #styleblock（#content）から継承、配色/組版は markdown.css。
+     data-scheme は glue.js の mermaid テーマ切替に使う（再描画ごとに最新が伝わる）。
+     Body は render が生成しサニタイズ済みの安全な HTML。 */}}
+{{define "content"}}{{if eq .Mode "source"}}<div class="editor" data-scheme="{{.Scheme}}"><pre class="chroma hl" id="hl-{{.TabID}}" aria-hidden="true">{{.Highlighted}}</pre><textarea class="editor-input" name="value" spellcheck="false" wrap="soft" hx-post="/tabs/{{.TabID}}/content" hx-target="#hl-{{.TabID}}" hx-swap="outerHTML" hx-trigger="input changed delay:150ms">{{.Raw}}</textarea></div>{{else}}<div class="preview-scroll" data-scheme="{{.Scheme}}"><div class="markdown-body">{{.Body}}</div></div>{{end}}{{end}}
+
+{{/* 編集オーバーレイのハイライト層（入力ごとの再ハイライト応答）。 */}}
+{{define "hl"}}<pre class="chroma hl" id="hl-{{.TabID}}" aria-hidden="true">{{.Highlighted}}</pre>{{end}}
+
+{{/* 編集入力の応答: ハイライト層（#hl-{id} を outerHTML 置換）＋ タブバーを OOB 更新して
+     未保存マーク（•）を即時反映する。 */}}
+{{define "edit-sync"}}{{template "hl" .Content}}
+<div id="tabbar" hx-swap-oob="true">{{template "tabbar-inner" .}}</div>{{end}}
+
+{{/* アクティブスタイルの CSS 変数ブロック（フィールド編集のライブプレビュー応答）。 */}}
+{{define "styleblock"}}<style id="styleblock">#content{ {{.StyleVars}} }</style>{{end}}
+
+{{/* ユーザーの上書き CSS（customCSS 編集のライブプレビュー応答）。 */}}
+{{define "customcss"}}<style id="customcss">{{.CustomCSS}}</style>{{end}}
+
+{{/* 数値フィールド: スライダー＋数値入力（対で glue が同期）。
+     dict: Label Min Max Step Val Post。両入力とも同じ endpoint へ POST し #styleblock を差し替える。 */}}
+{{define "numfield"}}<label class="field"><span>{{.Label}}</span><span class="field-pair" data-pair><input type="range" min="{{.Min}}" max="{{.Max}}" step="{{.Step}}" name="value" value="{{.Val}}" hx-post="{{.Post}}" hx-target="#styleblock" hx-swap="outerHTML" hx-trigger="input changed delay:80ms"><input type="number" class="field-num" min="{{.Min}}" max="{{.Max}}" step="{{.Step}}" name="value" value="{{.Val}}" hx-post="{{.Post}}" hx-target="#styleblock" hx-swap="outerHTML" hx-trigger="input changed delay:200ms"></span></label>{{end}}
+
+{{/* カラーフィールド: カラーピッカー＋HEX テキスト（対で glue が同期）。
+     dict: Label Val Post。HEX は commit（change）時に POST。 */}}
+{{define "colorfield"}}<label class="field"><span>{{.Label}}</span><span class="field-pair" data-pair><input type="color" name="value" value="{{.Val}}" hx-post="{{.Post}}" hx-target="#styleblock" hx-swap="outerHTML" hx-trigger="input changed delay:80ms"><input type="text" class="field-hex" name="value" value="{{.Val}}" maxlength="7" spellcheck="false" hx-post="{{.Post}}" hx-target="#styleblock" hx-swap="outerHTML" hx-trigger="change"></span></label>{{end}}
+
+{{/* 設定パネル（スタイル選択・複製・編集フィールド）。各フィールドは編集で
+     #styleblock（CSS 変数）だけを差し替える＝本文再描画なしのライブプレビュー。 */}}
+{{define "settings-inner"}}<div class="settings-section">
+  <div class="settings-label">スタイル</div>
+  <ul class="style-list">{{range .Styles}}<li><button type="button" class="style-opt{{if .Active}} active{{end}}" hx-post="/settings/style/{{.ID}}" hx-target="#content">{{.Name}}</button></li>{{end}}</ul>
+  <button type="button" class="mm-btn" hx-post="/settings/import" hx-target="#content" title="スタイルをインポート">インポート</button>
+</div>
+{{if not .ActiveEditable}}<div class="settings-section">
+  <p class="settings-note">プリセットは直接編集できません。複製してから編集してください。</p>
+  <button type="button" class="mm-btn mm-btn-primary" hx-post="/settings/duplicate" hx-target="#content">複製して編集</button>
+</div>{{else}}{{$s := .ActiveStyle}}
+<div class="settings-section">
+  <label class="field"><span>名前</span><input type="text" name="value" value="{{$s.Name}}" hx-post="/settings/rename" hx-target="#settings" hx-swap="outerHTML" hx-trigger="change" /></label>
+  <div class="settings-actions">
+    <button type="button" class="mm-btn" hx-post="/settings/export" hx-target="#settings" hx-swap="outerHTML">エクスポート</button>
+    <button type="button" class="mm-btn" hx-post="/settings/delete" hx-target="#content">削除</button>
+  </div>
+</div>
+<div class="settings-section">
+  <div class="settings-heading">本文</div>
+  <label class="field"><span>フォント</span><select name="value" hx-post="/settings/field/fontFamily" hx-target="#styleblock" hx-swap="outerHTML" hx-trigger="change">{{range .FontOptions}}<option value="{{.Value}}"{{if eq $s.FontFamily .Value}} selected{{end}}>{{.Label}}</option>{{end}}</select></label>
+  {{template "numfield" (dict "Label" "文字サイズ" "Min" 12 "Max" 28 "Step" 1 "Val" $s.FontSize "Post" "/settings/field/fontSize")}}
+  {{template "numfield" (dict "Label" "行間" "Min" 1.2 "Max" 2.4 "Step" 0.05 "Val" $s.LineHeight "Post" "/settings/field/lineHeight")}}
+  {{template "colorfield" (dict "Label" "文字色" "Val" $s.Color "Post" "/settings/field/color")}}
+  {{template "colorfield" (dict "Label" "背景色" "Val" $s.Background "Post" "/settings/field/background")}}
+  {{template "numfield" (dict "Label" "最大幅" "Min" 480 "Max" 1400 "Step" 20 "Val" $s.MaxWidth "Post" "/settings/field/maxWidth")}}
+  <label class="field checkbox"><input type="checkbox" name="value" value="true"{{if $s.MaxWidthFull}} checked{{end}} hx-post="/settings/field/maxWidthFull" hx-target="#styleblock" hx-swap="outerHTML" hx-trigger="change"><span>ウィンドウ幅に追従</span></label>
+  <label class="field"><span>配色（コード/図）</span><select name="value" hx-post="/settings/field/colorScheme" hx-target="#content" hx-trigger="change"><option value="light"{{if eq $s.ColorScheme "light"}} selected{{end}}>ライト</option><option value="dark"{{if eq $s.ColorScheme "dark"}} selected{{end}}>ダーク</option></select></label>
+</div>
+<div class="settings-section">
+  <div class="settings-heading">見出し</div>
+  {{range $i, $h := $s.Headings}}<details class="heading-details">
+    <summary>h{{inc $i}}</summary>
+    <label class="field"><span>フォント</span><select name="value" hx-post="/settings/heading/{{$i}}/fontFamily" hx-target="#styleblock" hx-swap="outerHTML" hx-trigger="change">{{range $.FontOptions}}<option value="{{.Value}}"{{if eq $h.FontFamily .Value}} selected{{end}}>{{.Label}}</option>{{end}}</select></label>
+    {{template "numfield" (dict "Label" "サイズ" "Min" 10 "Max" 48 "Step" 1 "Val" $h.FontSize "Post" (printf "/settings/heading/%d/fontSize" $i))}}
+    {{template "numfield" (dict "Label" "太さ" "Min" 100 "Max" 900 "Step" 100 "Val" $h.FontWeight "Post" (printf "/settings/heading/%d/fontWeight" $i))}}
+    {{template "colorfield" (dict "Label" "色" "Val" $h.Color "Post" (printf "/settings/heading/%d/color" $i))}}
+    {{template "numfield" (dict "Label" "上余白" "Min" 0 "Max" 4 "Step" 0.1 "Val" $h.MarginTop "Post" (printf "/settings/heading/%d/marginTop" $i))}}
+    {{template "numfield" (dict "Label" "下余白" "Min" 0 "Max" 2 "Step" 0.1 "Val" $h.MarginBottom "Post" (printf "/settings/heading/%d/marginBottom" $i))}}
+    <label class="field checkbox"><input type="checkbox" name="value" value="true"{{if $h.Border}} checked{{end}} hx-post="/settings/heading/{{$i}}/border" hx-target="#styleblock" hx-swap="outerHTML" hx-trigger="change"><span>下線</span></label>
+  </details>{{end}}
+</div>
+<div class="settings-section">
+  <div class="settings-heading">リンク</div>
+  {{template "colorfield" (dict "Label" "色" "Val" $s.LinkColor "Post" "/settings/field/linkColor")}}
+  <label class="field"><span>下線</span><select name="value" hx-post="/settings/field/linkUnderline" hx-target="#styleblock" hx-swap="outerHTML" hx-trigger="change"><option value="always"{{if eq $s.LinkUnderline "always"}} selected{{end}}>常に</option><option value="hover"{{if eq $s.LinkUnderline "hover"}} selected{{end}}>ホバー時</option><option value="none"{{if eq $s.LinkUnderline "none"}} selected{{end}}>なし</option></select></label>
+</div>
+<div class="settings-section">
+  <div class="settings-heading">リスト</div>
+  {{template "numfield" (dict "Label" "インデント" "Min" 0 "Max" 64 "Step" 2 "Val" $s.ListIndent "Post" "/settings/field/listIndent")}}
+  {{template "colorfield" (dict "Label" "マーカー色" "Val" $s.MarkerColor "Post" "/settings/field/markerColor")}}
+  {{template "numfield" (dict "Label" "マーカーサイズ" "Min" 0.5 "Max" 2 "Step" 0.1 "Val" $s.MarkerSize "Post" "/settings/field/markerSize")}}
+  <label class="field"><span>マーカー位置</span><select name="value" hx-post="/settings/field/markerPosition" hx-target="#styleblock" hx-swap="outerHTML" hx-trigger="change"><option value="outside"{{if eq $s.MarkerPosition "outside"}} selected{{end}}>外側</option><option value="inside"{{if eq $s.MarkerPosition "inside"}} selected{{end}}>内側</option></select></label>
+</div>
+<div class="settings-section">
+  <div class="settings-heading">引用</div>
+  {{template "colorfield" (dict "Label" "文字色" "Val" $s.QuoteColor "Post" "/settings/field/quoteColor")}}
+  {{template "colorfield" (dict "Label" "背景" "Val" $s.QuoteBg "Post" "/settings/field/quoteBg")}}
+  {{template "colorfield" (dict "Label" "罫線色" "Val" $s.QuoteBorder "Post" "/settings/field/quoteBorder")}}
+  {{template "numfield" (dict "Label" "罫線幅" "Min" 0 "Max" 12 "Step" 1 "Val" $s.QuoteBorderWidth "Post" "/settings/field/quoteBorderWidth")}}
+  <label class="field checkbox"><input type="checkbox" name="value" value="true"{{if $s.QuoteItalic}} checked{{end}} hx-post="/settings/field/quoteItalic" hx-target="#styleblock" hx-swap="outerHTML" hx-trigger="change"><span>斜体</span></label>
+</div>
+<div class="settings-section">
+  <div class="settings-heading">コード</div>
+  <label class="field"><span>フォント</span><select name="value" hx-post="/settings/field/codeFontFamily" hx-target="#styleblock" hx-swap="outerHTML" hx-trigger="change">{{range .CodeFontOptions}}<option value="{{.Value}}"{{if eq $s.CodeFontFamily .Value}} selected{{end}}>{{.Label}}</option>{{end}}</select></label>
+  {{template "colorfield" (dict "Label" "ブロック背景" "Val" $s.CodeBlockBg "Post" "/settings/field/codeBlockBg")}}
+  {{template "numfield" (dict "Label" "文字サイズ" "Min" 10 "Max" 24 "Step" 1 "Val" $s.CodeFontSize "Post" "/settings/field/codeFontSize")}}
+  {{template "colorfield" (dict "Label" "インライン背景" "Val" $s.CodeBg "Post" "/settings/field/codeBg")}}
+</div>
+<div class="settings-section">
+  <div class="settings-heading">水平線</div>
+  {{template "colorfield" (dict "Label" "色" "Val" $s.HrColor "Post" "/settings/field/hrColor")}}
+  {{template "numfield" (dict "Label" "太さ" "Min" 1 "Max" 8 "Step" 1 "Val" $s.HrThickness "Post" "/settings/field/hrThickness")}}
+</div>
+<div class="settings-section">
+  <div class="settings-heading">表</div>
+  {{template "colorfield" (dict "Label" "罫線色" "Val" $s.BorderColor "Post" "/settings/field/borderColor")}}
+  {{template "colorfield" (dict "Label" "ヘッダ背景" "Val" $s.TableHeaderBg "Post" "/settings/field/tableHeaderBg")}}
+  {{template "colorfield" (dict "Label" "奇数行背景" "Val" $s.RowOddBg "Post" "/settings/field/rowOddBg")}}
+  {{template "colorfield" (dict "Label" "偶数行背景" "Val" $s.RowEvenBg "Post" "/settings/field/rowEvenBg")}}
+</div>
+<div class="settings-section">
+  <div class="settings-heading">上書き CSS（上級者向け）</div>
+  <textarea class="custom-css" name="value" rows="6" spellcheck="false" hx-post="/settings/field/customCSS" hx-target="#customcss" hx-swap="outerHTML" hx-trigger="input changed delay:300ms">{{$s.CustomCSS}}</textarea>
+</div>
+{{end}}{{end}}
+
+{{/* 設定モーダルのホスト（トグル応答＝outerHTML 差し替え）。常時レンダリングし #settings[hidden] で表示制御。 */}}
+{{define "settings"}}<div id="settings"{{if not .SettingsOpen}} hidden{{end}}>{{template "settings-modal" .}}</div>{{end}}
+
+{{/* 設定モーダル本体（backdrop＋ダイアログ）。ヘッダに閉じるボタン、本文はスクロール。 */}}
+{{define "settings-modal"}}<div class="mm-settings-backdrop"><div class="settings-dialog" role="dialog" aria-modal="true" aria-label="スタイル設定">
+  <div class="settings-dialog-head"><span class="settings-dialog-title">スタイル設定</span><button type="button" class="settings-close" data-settings-close hx-post="/settings/toggle" hx-target="#settings" hx-swap="outerHTML" title="閉じる（Esc）">✕</button></div>
+  <div class="settings-scroll">{{template "settings-inner" .}}</div>
+</div></div>{{end}}
+
+{{/* スタイル変更（選択/複製/配色）の応答: 本文（#content）＋ styleblock/コードテーマ/上書きCSS/設定モーダルを OOB 更新。 */}}
+{{define "restyle"}}{{template "content" .Content}}
+<style id="styleblock" hx-swap-oob="true">#content{ {{.StyleVars}} }</style>
+<style id="markmiru-code-theme" hx-swap-oob="true">{{.CodeCSS}}</style>
+<style id="customcss" hx-swap-oob="true">{{.CustomCSS}}</style>
+<div id="settings"{{if not .SettingsOpen}} hidden{{end}} hx-swap-oob="true">{{template "settings-modal" .}}</div>{{end}}
+
+{{/* ページ内検索バー（#find-host に注入）。data-find-* は glue.js が配線するフック。
+     入力は即時（インクリメンタル）検索、Enter=次/Shift+Enter=前、Esc=閉じる。 */}}
+{{define "find-bar"}}<div class="find-bar" role="search">
+  <input type="text" class="find-input" data-find-input placeholder="検索" aria-label="ページ内検索" autocomplete="off" spellcheck="false" />
+  <span class="find-count" data-find-count aria-live="polite"></span>
+  <button type="button" class="find-nav" data-find-prev title="前へ (Shift+Enter)">▲</button>
+  <button type="button" class="find-nav" data-find-next title="次へ (Enter)">▼</button>
+  <button type="button" class="find-close" data-find-close title="閉じる (Esc)">✕</button>
+</div>{{end}}
+
+{{/* 外部画像の確認ダイアログ（.TabID / .FileName）。許可で再描画、拒否で遮断のまま。 */}}
+{{define "dialog-remote"}}<div class="mm-backdrop"><div class="mm-dialog" role="dialog" aria-modal="true">
+  <p class="mm-dialog-msg">「{{.FileName}}」に外部画像が含まれています。読み込みますか？</p>
+  <div class="mm-dialog-actions">
+    <button type="button" class="mm-btn" data-dialog-reject hx-post="/tabs/{{.TabID}}/remote-images?choice=block" hx-target="#content">表示しない</button>
+    <button type="button" class="mm-btn mm-btn-primary" data-dialog-accept disabled hx-post="/tabs/{{.TabID}}/remote-images?choice=allow" hx-target="#content">表示する</button>
+  </div>
+</div></div>{{end}}
+
+{{/* 未保存タブのクローズ確認（.TabID / .FileName / .Quit）。3択。
+     破棄（データ損失）は data-dialog-accept で 500ms 遅延有効・キージャック対策。
+     キャンセルは data-dialog-reject で Esc 対応。.Quit の場合は終了ループのステップへ post する。 */}}
+{{define "dialog-close-unsaved"}}<div class="mm-backdrop"><div class="mm-dialog" role="dialog" aria-modal="true">
+  <p class="mm-dialog-msg">「{{.FileName}}」には未保存の変更があります。保存しますか？</p>
+  <div class="mm-dialog-actions">
+    {{if .Quit}}<button type="button" class="mm-btn" data-dialog-reject hx-post="/quit/step?id={{.TabID}}&choice=cancel" hx-target="#content">キャンセル</button>
+    <button type="button" class="mm-btn mm-btn-danger" data-dialog-accept disabled hx-post="/quit/step?id={{.TabID}}&choice=discard" hx-target="#content">破棄して閉じる</button>
+    <button type="button" class="mm-btn mm-btn-primary" data-dialog-default hx-post="/quit/step?id={{.TabID}}&choice=save" hx-target="#content">保存して閉じる</button>
+    {{else}}<button type="button" class="mm-btn" data-dialog-reject hx-post="/tabs/{{.TabID}}/close?choice=cancel" hx-target="#content">キャンセル</button>
+    <button type="button" class="mm-btn mm-btn-danger" data-dialog-accept disabled hx-post="/tabs/{{.TabID}}/close?choice=discard" hx-target="#content">破棄して閉じる</button>
+    <button type="button" class="mm-btn mm-btn-primary" data-dialog-default hx-post="/tabs/{{.TabID}}/close?choice=save" hx-target="#content">保存して閉じる</button>{{end}}
+  </div>
+</div></div>{{end}}
+
+{{/* 起動時の不在ファイル確認（.Path）。再試行＝存在を再確認して開く / スキップ＝諦める。
+     再試行を既定（Enter）、スキップを reject（Esc）に。破壊的操作は無いので遅延無効化なし。 */}}
+{{define "dialog-missing-file"}}<div class="mm-backdrop"><div class="mm-dialog" role="dialog" aria-modal="true">
+  <p class="mm-dialog-msg">ファイルが見つかりません:</p>
+  <p class="mm-dialog-path">{{.Path}}</p>
+  <div class="mm-dialog-actions">
+    <button type="button" class="mm-btn" data-dialog-reject hx-post="/missing/skip" hx-target="#content">スキップ</button>
+    <button type="button" class="mm-btn mm-btn-primary" data-dialog-default hx-post="/missing/retry" hx-target="#content">再試行</button>
+  </div>
+</div></div>{{end}}
+
+{{/* 外部リンクを開く確認（.URL）。危険側「はい」は data-dialog-accept で 500ms 遅延有効・
+     ポインタのみ（Enter で誤発火させない）。安全側「いいえ」を Enter/Esc の既定に。 */}}
+{{define "dialog-link"}}<div class="mm-backdrop"><div class="mm-dialog" role="dialog" aria-modal="true">
+  <p class="mm-dialog-msg">次のリンクを既定のアプリで開きますか？</p>
+  <p class="mm-dialog-path">{{.URL}}</p>
+  <div class="mm-dialog-actions">
+    <button type="button" class="mm-btn" data-dialog-reject data-dialog-default hx-post="/link/dismiss" hx-swap="none">いいえ</button>
+    <button type="button" class="mm-btn mm-btn-primary" data-dialog-accept disabled hx-post="/link/open" hx-swap="none">はい</button>
+  </div>
+</div></div>{{end}}
+
+{{/* ダイアログの種類ディスパッチ（Kind でテンプレートを選ぶ）。 */}}
+{{define "dialog"}}{{if eq .Kind "close-unsaved"}}{{template "dialog-close-unsaved" .}}{{else if eq .Kind "missing-file"}}{{template "dialog-missing-file" .}}{{else if eq .Kind "link"}}{{template "dialog-link" .}}{{else}}{{template "dialog-remote" .}}{{end}}{{end}}
+
+{{/* #dialog-host を OOB で差し替え（ダイアログ表示 or クリア）。VM は .Dialog を持つ。 */}}
+{{define "dialog-host-oob"}}<div id="dialog-host" hx-swap-oob="true">{{if .Dialog}}{{template "dialog" .Dialog}}{{end}}</div>{{end}}
+
+{{/* 閲覧本文の応答（#content へ）＋ ダイアログ host を OOB 更新。 */}}
+{{define "view"}}{{template "content" .Content}}{{template "dialog-host-oob" .}}{{end}}
+
+{{/* タブ操作（新規/閉じる/アクティブ切替）の応答: 本文＋タブバー OOB＋サイドバー OOB＋ダイアログ host OOB。 */}}
+{{define "nav"}}{{template "content" .Content}}
+<div id="tabbar" hx-swap-oob="true">{{template "tabbar-inner" .}}</div>
+<aside id="sidebar"{{if not .SidebarOpen}} hidden{{end}} hx-swap-oob="true">{{template "sidebar-inner" .}}</aside>
+{{template "dialog-host-oob" .}}{{end}}

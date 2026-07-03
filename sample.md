@@ -33,6 +33,12 @@ function greet(name) {
 }
 ```
 
+## 脚注
+
+本文にはこんなこと書いてあります[^1]
+
+[^1]: 脚注の説明ですよ
+
 ## mermaid 図
 
 ```mermaid

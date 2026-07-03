@@ -1,0 +1,558 @@
+/*
+ * Go-SSR シェルの土台レイアウト。
+ * 本文（プレビュー）の配色・組版はスタイル由来の CSS 変数（#styleblock）が担い、
+ * ここではアプリの骨組み（タブバー / サイドバー / 本文領域 / オーバーレイ）のみを定義する。
+ * 設計: docs/アーキテクチャ・画面設計.md §4.3
+ */
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden; /* 文書レベルのスクロールを抑止し、スクロールは .preview-scroll に一本化（二重スクロールバー回避） */
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif;
+  color: #24292f;
+  background: #ffffff;
+}
+
+#tabbar {
+  flex: 0 0 auto;
+  min-height: 36px;
+  border-bottom: 1px solid #d0d7de;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 0 4px;
+  background: #f6f8fa;
+  overflow-x: auto;
+}
+.tb-btn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0 0.6rem;
+  font-size: 1rem;
+  color: #57606a;
+}
+.tb-btn:hover {
+  background: #eaeef2;
+}
+.tb-right {
+  margin-left: auto;
+  display: flex;
+  align-items: stretch;
+}
+.tab {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 4px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  background: #eaeef2;
+}
+.tab.active {
+  background: #ffffff;
+  border-color: #d0d7de;
+}
+.tab-name {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0.35rem 0.4rem 0.35rem 0.6rem;
+  color: #24292f;
+  max-width: 16rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tab-close {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0 0.45rem;
+  color: #57606a;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+.tab-close:hover {
+  color: #cf222e;
+}
+
+/* 設定モーダル（backdrop＋ダイアログ）。#settings は表示制御のみのホスト。 */
+#settings[hidden] {
+  display: none;
+}
+.mm-settings-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.settings-dialog {
+  background: #ffffff;
+  color: #24292f;
+  border: 1px solid #d0d7de;
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28);
+  width: 480px;
+  max-width: calc(100vw - 3rem);
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.settings-dialog-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 0.5rem 0.55rem 0.9rem;
+  border-bottom: 1px solid #d0d7de;
+  background: #f6f8fa;
+}
+.settings-dialog-title {
+  font-weight: 600;
+}
+.settings-close {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  color: #57606a;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+}
+.settings-close:hover {
+  background: #eaeef2;
+  color: #cf222e;
+}
+.settings-scroll {
+  flex: 1 1 auto;
+  overflow: auto;
+  background: #f6f8fa;
+}
+.settings-title {
+  padding: 0.6rem 0.75rem;
+  font-weight: 600;
+  border-bottom: 1px solid #d0d7de;
+}
+.settings-section {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid #e6e9ee;
+}
+.settings-label {
+  display: block;
+  font-size: 0.8rem;
+  color: #57606a;
+  margin-bottom: 0.4rem;
+}
+.settings-note {
+  margin: 0 0 0.6rem;
+  font-size: 0.85rem;
+  color: #57606a;
+}
+.style-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.style-opt {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  color: #24292f;
+}
+.style-opt:hover {
+  background: #eaeef2;
+}
+.style-opt.active {
+  background: #dbeafe;
+  font-weight: 600;
+}
+.settings-heading {
+  font-weight: 600;
+  font-size: 0.85rem;
+  margin-bottom: 0.4rem;
+}
+.field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0.35rem 0;
+}
+.field > span {
+  font-size: 0.8rem;
+  color: #57606a;
+}
+.field.checkbox {
+  justify-content: flex-start;
+}
+.field input[type='range'],
+.field select {
+  flex: 0 0 55%;
+}
+.field input[type='color'] {
+  width: 2.4rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 1px solid #d0d7de;
+  background: none;
+}
+/* 対入力（スライダー＋数値 / カラー＋HEX）を横並びに。 */
+.field-pair {
+  flex: 0 0 55%;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.field-pair input[type='range'] {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.field-pair input[type='color'] {
+  flex: 0 0 2.4rem;
+}
+.field-num {
+  flex: 0 0 3.4rem;
+  width: 3.4rem;
+  box-sizing: border-box;
+  font-size: 0.8rem;
+}
+.field-hex {
+  flex: 1 1 auto;
+  min-width: 0;
+  box-sizing: border-box;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+}
+.custom-css {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+}
+.settings-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.heading-details {
+  border: 1px solid #e6e9ee;
+  border-radius: 6px;
+  margin: 0.3rem 0;
+  padding: 0.2rem 0.5rem;
+}
+.heading-details > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
+  padding: 0.2rem 0;
+}
+.field input[type='text'] {
+  flex: 0 0 55%;
+}
+
+/* サイドバー（開いているファイル一覧） */
+.sidebar-title {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8rem;
+  color: #57606a;
+  border-bottom: 1px solid #d0d7de;
+}
+.file-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.file-item button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0.4rem 0.75rem;
+  color: #24292f;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.file-item button:hover {
+  background: #eaeef2;
+}
+.file-item.active button {
+  background: #dbeafe;
+  font-weight: 600;
+}
+
+.body-row {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0; /* 子のスクロールを有効にする */
+}
+
+#sidebar {
+  flex: 0 0 240px;
+  border-right: 1px solid #d0d7de;
+  overflow: auto;
+}
+
+/* サイドバーを閉じた状態（/sidebar/toggle が hidden 属性をトグルする）。 */
+#sidebar[hidden] {
+  display: none;
+}
+
+#content {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden; /* スクロールは内側の .preview-scroll / .editor が担う */
+}
+
+/* 編集モード: 透明 textarea を chroma ハイライト層に重ねる（オーバーレイ手法）。 */
+.editor {
+  position: relative;
+  height: 100%;
+  background: var(--md-bg, #ffffff);
+}
+.editor .hl,
+.editor .editor-input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  border: 0;
+  padding: 1rem 1.25rem;
+  box-sizing: border-box;
+  overflow: auto;
+  font-family: var(--md-code-font, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: var(--md-code-size, 14px);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  tab-size: 2;
+}
+.editor .hl {
+  z-index: 1;
+  pointer-events: none;
+  background: transparent; /* .editor の背景（--md-bg）を見せる */
+  border-radius: 0;
+  color: var(--md-color, #24292f); /* トークン以外の素テキスト色 */
+}
+.editor .editor-input {
+  z-index: 2;
+  background: transparent;
+  color: transparent; /* 文字はハイライト層が見せる。キャレットのみ表示 */
+  caret-color: var(--md-color, #24292f);
+  resize: none;
+  outline: none;
+}
+/* Markdown 構文ハイライト（控えめ）。chroma の github スタイルは generic トークン
+   （見出し gh / 小見出し gu / 強調 gs / 斜体 ge）に色を持たないため、視認できるよう補う。
+   色はアクティブスタイルの変数に連動し light/dark 両対応。 */
+.editor .hl .gh,
+.editor .hl .gu {
+  color: var(--md-link-color, #0550ae);
+  font-weight: 700;
+}
+.editor .hl .gs {
+  font-weight: 700;
+}
+.editor .hl .ge {
+  font-style: italic;
+}
+
+/* オーバーレイ系（コンテキストメニュー / 検索バー）の差し込み先。 */
+#ctxmenu-host,
+#find-host {
+  position: fixed;
+  inset: 0 auto auto 0;
+  z-index: 1000;
+}
+
+/* モーダルダイアログ（#dialog-host に差し込む断片）。 */
+.mm-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.mm-dialog {
+  background: #ffffff;
+  color: #24292f;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  padding: 1.2rem 1.4rem;
+  max-width: 28rem;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+}
+.mm-dialog-msg {
+  margin: 0 0 1rem;
+}
+.mm-dialog-path {
+  margin: -0.5rem 0 1rem;
+  padding: 0.4rem 0.6rem;
+  background: #f6f8fa;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  word-break: break-all;
+}
+.mm-dialog-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+.mm-btn {
+  padding: 0.35rem 0.9rem;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #f6f8fa;
+  color: #24292f;
+  cursor: pointer;
+}
+.mm-btn-primary {
+  background: #1f6feb;
+  color: #ffffff;
+  border-color: #1f6feb;
+}
+.mm-btn-danger {
+  background: #fbe9e7;
+  color: #b3261e;
+  border-color: #f3c0ba;
+}
+.mm-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ページ内検索バー（#find-host に注入。閲覧/編集どちらでも本文右上に浮かせる）。
+   検索ロジックは glue.js（走査＋CSS Custom Highlight API）。 */
+.find-bar {
+  position: fixed;
+  top: 44px;
+  right: 24px;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.3rem 0.4rem;
+  background: #ffffff;
+  color: #24292f;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+.find-input {
+  border: 1px solid #d0d7de;
+  border-radius: 5px;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.9rem;
+  width: 12rem;
+  outline: none;
+}
+.find-input:focus {
+  border-color: #1f6feb;
+}
+.find-count {
+  min-width: 3.2rem;
+  text-align: center;
+  font-size: 0.8rem;
+  color: #57606a;
+  font-variant-numeric: tabular-nums;
+}
+.find-nav,
+.find-close {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0.15rem 0.35rem;
+  color: #57606a;
+  font-size: 0.85rem;
+  line-height: 1;
+  border-radius: 5px;
+}
+.find-nav:hover,
+.find-close:hover {
+  background: #eaeef2;
+}
+
+/* CSS Custom Highlight API の配色（全一致=淡い黄、現在の一致=濃いオレンジ）。
+   .markdown-body（閲覧）と .hl オーバーレイ（編集）の両方に適用される。 */
+::highlight(mm-find) {
+  background-color: #fff3a3;
+  color: #24292f;
+}
+::highlight(mm-find-current) {
+  background-color: #ffb454;
+  color: #24292f;
+}
+
+/*
+ * 印刷 / PDF 出力用（設計: docs/スタイル設定設計.md §5.2）。
+ * - アプリの枠（タブバー/サイドバー/設定/エディタ/オーバーレイ）を隠し、本文のみ印刷。
+ * - スクロールコンテナの height/overflow を解除しないと 2 ページ目以降が空白になる。
+ * - 既定は印刷向け配色（紙=白・濃色文字）。「表示通りに印刷」トグルは後続で対応。
+ */
+@media print {
+  #tabbar,
+  #sidebar,
+  #settings,
+  #dialog-host,
+  #ctxmenu-host,
+  #find-host,
+  .editor {
+    display: none !important;
+  }
+  html,
+  body,
+  #app,
+  .body-row,
+  #content,
+  .preview-scroll {
+    display: block !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+  .markdown-body {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+  /* pre/table の overflow:auto はスクロールコンテナを作り内容を切り取るため解除 */
+  .markdown-body pre,
+  .markdown-body table {
+    overflow: visible !important;
+  }
+  /* 印刷向け配色（紙=白背景・濃色文字） */
+  .preview-scroll,
+  .markdown-body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  .markdown-body :is(h1, h2, h3, h4, h5, h6) {
+    color: #000000 !important;
+  }
+  .markdown-body pre,
+  .markdown-body code {
+    background: #f3f3f3 !important;
+  }
+}

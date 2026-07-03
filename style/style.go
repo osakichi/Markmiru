@@ -1,10 +1,10 @@
 // Package style は閲覧モードのスタイル（構造化データ）と CSS 変数への変換を担う。
 //
-// フロントの frontend/src/lib/style/styleDef.ts を Go へ移植したもの。JSON フィールド名は
-// TS 側と完全一致させており（config の stylesJson 互換）、styleToVars / serializeStyle /
+// 旧 Svelte 版の styleDef.ts を Go へ移植したもの。JSON フィールド名は
+// 旧 TS 側と完全一致させており（config の stylesJson 互換）、styleToVars / serializeStyle /
 // parseStyleFile / normalizeStyle / プリセットの出力が一致する。
 //
-// 設計: docs/スタイル設定設計.md §1, §2, §6 / docs/Go中心化移行設計.md §8
+// 設計: docs/スタイル設定設計.md §1, §2, §6 / docs/アーキテクチャ・画面設計.md §6
 package style
 
 import (
@@ -88,6 +88,9 @@ func (s Style) clone() Style {
 	return c
 }
 
+// Clone は headings を含む深いコピーを返す（呼び出し側がスタイルを複製・編集する用）。
+func (s Style) Clone() Style { return s.clone() }
+
 // 同梱フォント（@fontsource）。styleDef.ts と同一。
 const (
 	SANS       = `"Noto Sans JP", -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif`
@@ -95,6 +98,32 @@ const (
 	MONO       = `"Noto Sans Mono", "Noto Sans JP", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`
 	systemSans = `-apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif`
 )
+
+// systemMono はシステム等幅フォントスタック（設定の選択肢用）。
+const systemMono = `ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`
+
+// FontOption は設定パネルのフォント選択肢。
+type FontOption struct {
+	Label string
+	Value string
+}
+
+// FontOptions は本文/見出しフォントの選択肢（styleDef.ts の FONT_OPTIONS と同一）。
+func FontOptions() []FontOption {
+	return []FontOption{
+		{"Noto Sans JP（ゴシック）", SANS},
+		{"Noto Serif JP（明朝）", SERIF},
+		{"システム", systemSans},
+	}
+}
+
+// CodeFontOptions は等幅フォントの選択肢（styleDef.ts の CODE_FONT_OPTIONS と同一）。
+func CodeFontOptions() []FontOption {
+	return []FontOption{
+		{"Noto Sans Mono", MONO},
+		{"システム等幅", systemMono},
+	}
+}
 
 // num は number → CSS 値文字列（TS のテンプレートリテラルと同じ最短表現）。
 func num(f float64) string {

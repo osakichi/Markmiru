@@ -1,8 +1,8 @@
 // Package render は Markdown を安全な HTML へ変換する閲覧モードの描画パイプライン。
 //
-// 現行フロント（frontend/src/lib/markdown/renderer.ts）の挙動を Go へ移植したもの:
+// 旧 Svelte 版の描画（renderer.ts）の挙動を Go へ移植したもの:
 //
-//	goldmark（CommonMark + GFM）
+//	goldmark（CommonMark + GFM ＋ 脚注）
 //	  → 見出しに GitHub 互換スラッグ id 付与
 //	  → ```mermaid フェンスは <pre class="mermaid"> プレースホルダ（描画は WebView の mermaid.js）
 //	  → その他のコードは chroma で色付け（クラス方式。CSS は HighlightCSS が出力）
@@ -10,7 +10,7 @@
 //	  → 外部リンクへ rel="noopener noreferrer" 付与、リモート画像は既定で遮断
 //	  → bluemonday でサニタイズ（script 等の危険要素を除去）
 //
-// 設計: docs/Go中心化移行設計.md §4
+// 設計: docs/アーキテクチャ・画面設計.md §3
 package render
 
 import (
@@ -66,7 +66,7 @@ var remoteURLRe = regexp.MustCompile(`(?i)^(https?:)?//`)
 // --- goldmark / bluemonday は一度だけ構築して使い回す ---
 
 var md = goldmark.New(
-	goldmark.WithExtensions(extension.GFM), // 表・打消し線・自動リンク・タスクリスト
+	goldmark.WithExtensions(extension.GFM, extension.Footnote), // 表・打消し線・自動リンク・タスクリスト・脚注
 	goldmark.WithParserOptions(
 		parser.WithASTTransformers(util.Prioritized(headingIDTransformer{}, 100)),
 	),
@@ -103,6 +103,26 @@ var (
 
 func ContentHasRemoteImages(content string) bool {
 	return mdRemoteImgRe.MatchString(content) || htmlRemoteImgRe.MatchString(content)
+}
+
+// HighlightInner は編集オーバーレイ用に、コードを chroma のクラス付きトークン列（<pre> 無し）で
+// 返す。呼び出し側が <pre class="chroma hl"> で包む。色は #markmiru-code-theme（chroma クラス）が付ける。
+func HighlightInner(code, lang string) string {
+	lexer := lexers.Get(lang)
+	if lexer == nil {
+		lexer = lexers.Fallback
+	}
+	lexer = chroma.Coalesce(lexer)
+	iterator, err := lexer.Tokenise(nil, code)
+	if err != nil {
+		return html.EscapeString(code)
+	}
+	f := chromahtml.New(chromahtml.WithClasses(true), chromahtml.PreventSurroundingPre(true))
+	var b strings.Builder
+	if err := f.Format(&b, styles.Fallback, iterator); err != nil {
+		return html.EscapeString(code)
+	}
+	return b.String()
 }
 
 // HighlightCSS は chroma のクラスに対応する CSS を返す（colorScheme に応じて github / github-dark）。
@@ -424,8 +444,9 @@ func buildPolicy() *bluemonday.Policy {
 		"table", "thead", "tbody", "tr", "th", "td",
 		"pre", "code", "span", "div", "input",
 	)
-	p.AllowAttrs("id").OnElements("h1", "h2", "h3", "h4", "h5", "h6")
-	p.AllowAttrs("class").OnElements("pre", "code", "span", "ul", "ol", "li", "div", "table")
+	p.AllowAttrs("id").OnElements("h1", "h2", "h3", "h4", "h5", "h6", "sup", "li") // 見出し＋脚注アンカー（fnref/fn）
+	p.AllowAttrs("class").OnElements("pre", "code", "span", "ul", "ol", "li", "div", "table", "a", "sup")
+	p.AllowAttrs("role").OnElements("a", "li", "div", "sup") // 脚注の a11y（doc-noteref / doc-endnote 等）
 	p.AllowAttrs("tabindex").OnElements("pre")
 	// 表の配置
 	p.AllowAttrs("align").OnElements("td", "th", "tr")

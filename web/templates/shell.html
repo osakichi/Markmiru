@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{.Title}}</title>
+  <link rel="stylesheet" href="/assets/app.css" />
+  <link rel="stylesheet" href="/assets/markdown.css" />
+  <!-- 同梱フォント（Noto Sans JP / Serif JP / Sans Mono, OFL）。スタイル変数のフォント指定が参照する。 -->
+  <link rel="stylesheet" href="/assets/fonts.css" />
+  <!-- アクティブスタイルの CSS 変数（Go の style.CSS）。#content 配下（.preview-scroll/.markdown-body）が継承する。 -->
+  <style id="styleblock">#content{ {{.StyleVars}} }</style>
+  <!-- コードハイライト CSS（Go の render.HighlightCSS。chroma クラス、colorScheme 連動）。 -->
+  <style id="markmiru-code-theme">{{.CodeCSS}}</style>
+  <!-- 印刷用のライトなコード配色（ダークスタイルでも印刷は印刷向け＝ライトに揃える）。 -->
+  <style id="print-code-theme" media="print">{{.PrintCodeCSS}}</style>
+  <!-- ユーザーの上書き CSS（アクティブスタイルの customCSS）。 -->
+  <style id="customcss">{{.CustomCSS}}</style>
+  <script src="/assets/htmx.min.js" defer></script>
+  <script src="/assets/mermaid.min.js" defer></script>
+  <script src="/assets/glue.js" defer></script>
+</head>
+<body>
+  <!-- Go-SSR シェル。各リージョンは htmx が断片を差し替える対象（設計: docs/アーキテクチャ・画面設計.md §4.3, §4.4）。
+       data-scheme は mermaid のテーマ切替に使う（glue.js）。 -->
+  <div id="app" data-scheme="{{.Scheme}}">
+    <div id="tabbar">{{template "tabbar-inner" .}}</div>
+    <div class="body-row">
+      <aside id="sidebar"{{if not .SidebarOpen}} hidden{{end}}>{{template "sidebar-inner" .}}</aside>
+      <main id="content">{{template "content" .Content}}</main>
+    </div>
+    <!-- 設定モーダル（常時レンダリングし #settings[hidden] で表示制御） -->
+    {{template "settings" .}}
+    <!-- オーバーレイ系のホスト（通常は空。ダイアログ表示時のみ中身が入る） -->
+    <div id="dialog-host">{{if .Dialog}}{{template "dialog" .Dialog}}{{end}}</div>
+    <div id="ctxmenu-host"></div>
+    <div id="find-host"></div>
+  </div>
+</body>
+</html>

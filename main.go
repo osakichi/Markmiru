@@ -1,9 +1,10 @@
 package main
 
 import (
-	"embed"
 	"os"
 	"path/filepath"
+
+	"Markmiru/web"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/menu"
@@ -13,9 +14,6 @@ import (
 	wailswindows "github.com/wailsapp/wails/v2/pkg/options/windows"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
-
-//go:embed all:frontend/dist
-var assets embed.FS
 
 // version はビルド時に ldflags（-X main.version=<git ショート SHA>）で埋め込まれる版。
 // 既定値 "dev" は scripts/build.ps1（または build.sh）を介さずに素の wails build をした場合の表示。
@@ -31,8 +29,8 @@ const appTitle = "Markmiru"
 var editOnlyMenuItems []*menu.MenuItem
 
 // buildMenu はネイティブメニューを構築する。
-// クリック/ショートカットは runtime イベントでフロントへ通知し、フロント側でコマンドを実行する。
-// 設計: docs/アーキテクチャ・画面設計.md §9
+// クリック/ショートカットは runtime イベント（menu:*）を発火し、glue.js が htmx で対応する
+// Go-SSR エンドポイントを叩く。設計: docs/アーキテクチャ・画面設計.md §9
 func buildMenu(app *App) *menu.Menu {
 	appMenu := menu.NewMenu()
 
@@ -69,11 +67,11 @@ func buildMenu(app *App) *menu.Menu {
 	//   変更不可（日本語 OS でも "Edit" のまま）。日本語化は Wails のパッチ/フォーク、または
 	//   ネイティブ動作を捨てて手組みするしかなく、現状は英語表記を許容する。docs の既知課題参照。
 	// Windows / Linux: Wails のロールメニューは macOS 専用のため、日本語ラベルで手組みする。
-	//   各項目はフロントへ menu:* を発火し、ContextMenu と同じ editActions のハンドラで実行する。
+	//   各項目は menu:* を発火し、glue.js の editExec（textarea への execCommand）が実行する。
 	//   ショートカットは「表示のみ」: ラベルに "\t" ＋ キー表記を埋め込む（Win32 が右寄せ表示）。
-	//   アクセラレータ（第2引数）には登録しない＝WebView/CodeMirror のネイティブなキー処理や、
+	//   アクセラレータ（第2引数）には登録しない＝WebView（textarea）のネイティブなキー処理や、
 	//   設定パネル・検索バー等の入力欄での Ctrl+C/V/X を奪わないため（キー操作は元々ネイティブで動作）。
-	//   編集専用の項目は閲覧モードでは非活性にする（SetEditMenuEnabled が切り替える）。
+	//   編集専用の項目は閲覧モードでは非活性にする（サーバ主導で SetEditMenuEnabled が切り替える）。
 	if isMacOS {
 		appMenu.Append(menu.EditMenu())
 	} else {
@@ -89,7 +87,7 @@ func buildMenu(app *App) *menu.Menu {
 		editMenu.AddText("検索...\tCtrl+F", nil, func(_ *menu.CallbackData) { app.emit("menu:find") })
 
 		// 編集モードでのみ使える項目。初期は閲覧モード相当（セッション復元は常に閲覧）として無効から始め、
-		// フロントからのモード通知（SetEditMenuEnabled）で切り替える。
+		// サーバが本文描画のたびに SetEditMenuEnabled で切り替える。
 		editOnlyMenuItems = []*menu.MenuItem{undoItem, redoItem, cutItem, pasteItem}
 		for _, it := range editOnlyMenuItems {
 			it.Disabled = true
@@ -105,6 +103,49 @@ func buildMenu(app *App) *menu.Menu {
 	helpMenu.AddText("ライセンス...", nil, func(_ *menu.CallbackData) { app.emit("menu:license") })
 
 	return appMenu
+}
+
+// webHost は web パッケージの Host インタフェースを App 経由で実装する（web→main の境界アダプタ）。
+// SSR ハンドラ（web）から必要な OS 連携（ダイアログ・ファイル I/O・外部 URL 起動・ウィンドウ等）を
+// Wails runtime を持つ App のメソッドへ委譲する。
+type webHost struct{ app *App }
+
+func (h webHost) OpenFilesDialog() ([]web.OpenedFile, error) {
+	docs, err := h.app.OpenFiles()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]web.OpenedFile, len(docs))
+	for i, d := range docs {
+		out[i] = web.OpenedFile{Path: d.Path, Name: d.Name, Content: d.Content}
+	}
+	return out, nil
+}
+
+func (h webHost) SaveFileDialog(name string) (string, error) { return h.app.SaveFileDialog(name) }
+
+func (h webHost) WriteFile(path, content string) error {
+	_, err := h.app.SaveFile(path, content)
+	return err
+}
+
+func (h webHost) ReadmeMarkdown() string  { return h.app.ReadReadme() }
+func (h webHost) LicenseMarkdown() string { return h.app.ReadLicense() }
+
+func (h webHost) ExportStyleDialog(name string) (string, error) { return h.app.ExportStyleDialog(name) }
+func (h webHost) ImportStyleDialog() (string, error)            { return h.app.ImportStyleDialog() }
+
+func (h webHost) SetEditMenuEnabled(canEdit bool) { h.app.SetEditMenuEnabled(canEdit) }
+func (h webHost) Quit()                           { h.app.Quit() }
+
+func (h webHost) OpenURL(url string) { h.app.OpenExternalURL(url) }
+
+func (h webHost) ReadFile(path string) (string, string, bool) {
+	doc, err := h.app.ReadFile(path)
+	if err != nil {
+		return "", "", false
+	}
+	return doc.Name, doc.Content, true
 }
 
 func main() {
@@ -133,14 +174,83 @@ func main() {
 		startState = options.Maximised
 	}
 
+	// アセット配信: Go-SSR（web パッケージ）の http.Handler。状態を config から復元して構築する。
+	// assetserver.Options は Assets=nil のとき全 GET を Handler へ転送する（TCP なしのプロセス内疑似 HTTP）。
+	st := web.NewState()
+	// スタイル・サイドバー・セッションを config から復元する（§5.6, §7）。
+	st.RestoreStylesJSON(cfg.StylesJson, cfg.ActiveStyleId)
+	st.SetSidebarOpen(cfg.SidebarOpen)
+
+	// 開く対象パス = 前回セッション ∪ 起動引数（重複排除、順序: セッション→引数）。
+	// アクティブは、起動引数があればその最後、無ければセッションのアクティブ。
+	var paths []string
+	seen := map[string]bool{}
+	activePath := ""
+	for _, f := range cfg.Session.Files {
+		if !seen[f.Path] {
+			seen[f.Path] = true
+			paths = append(paths, f.Path)
+		}
+	}
+	if i := cfg.Session.ActiveIndex; i >= 0 && i < len(cfg.Session.Files) {
+		activePath = cfg.Session.Files[i].Path
+	}
+	for _, p := range app.startupFiles {
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			continue
+		}
+		if !seen[abs] {
+			seen[abs] = true
+			paths = append(paths, abs)
+		}
+		activePath = abs // 起動引数で指定したファイルを最後＝アクティブに
+	}
+
+	// 各パスを開く。読めなかったものは保留し、シェル表示時に再試行/スキップを確認する。
+	var missing []string
+	for _, p := range paths {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			missing = append(missing, p)
+			continue
+		}
+		tab := st.AddTab(p, filepath.Base(p), string(data))
+		if p == activePath {
+			st.Activate(tab.ID)
+		}
+	}
+	st.SetPendingMissing(missing)
+	if len(paths) == 0 {
+		st.NewUntitled() // 開く対象が全く無ければ空の新規タブ（不在ファイルのみのときは確認を優先）
+	}
+	app.unsavedChecker = st.HasUnsaved // 終了時の未保存判定をサーバ状態に委ねる
+	// 起動引数は復元に使用済み。以後の単一インスタンス IPC はイベント（ipc:open-file）で即時配信する。
+	app.startupFiles = nil
+	app.pendingMu.Lock()
+	app.frontReady = true
+	app.pendingMu.Unlock()
+	app.persistSession = func() { // ウィンドウを閉じる直前に現在のセッションを保存
+		files, activeIndex := st.SessionFiles()
+		c, _ := app.LoadConfig()
+		sf := make([]SessionFile, len(files))
+		for i, p := range files {
+			sf[i] = SessionFile{Path: p}
+		}
+		c.Session = Session{Files: sf, ActiveIndex: activeIndex}
+		c.SidebarOpen = st.SidebarOpen()
+		c.StylesJson = st.UserStylesJSON()
+		c.ActiveStyleId = st.ActiveStyle().ID
+		_ = writeConfig(c) // ウィンドウ状態は saveWindowState が別途保持
+	}
+	assetOpts := &assetserver.Options{Handler: web.NewHandler(st, webHost{app})}
+
 	err := wails.Run(&options.App{
 		Title:            appTitle,
 		Width:            width,
 		Height:           height,
 		WindowStartState: startState,
-		AssetServer: &assetserver.Options{
-			Assets: assets,
-		},
+		AssetServer:      assetOpts,
 		BackgroundColour: &options.RGBA{R: 255, G: 255, B: 255, A: 1},
 		Menu:             buildMenu(app),
 		OnStartup:        app.startup,

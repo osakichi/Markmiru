@@ -21,8 +21,7 @@ type Session struct {
 }
 
 // Config は永続化する設定全体。
-// ユーザーのスタイルはフロント側の型をそのまま JSON 文字列で保持する
-// （Go 側でスタイル構造を二重定義しないため）。
+// ユーザースタイルは JSON 文字列（style.Style 配列）として保持する（web.State が入出力する）。
 type Config struct {
 	Session       Session `json:"session"`
 	SidebarOpen   bool    `json:"sidebarOpen"`
@@ -30,7 +29,7 @@ type Config struct {
 	ActiveStyleId string  `json:"activeStyleId"`
 
 	// ウィンドウ状態。更新は Go 側（beforeClose の saveWindowState）のみで、
-	// フロントの SaveConfig には含まれない（既存値を保持する）。
+	// セッション保存（persistSession）には含めない（既存値を保持する）。
 	WindowWidth     int  `json:"windowWidth"`
 	WindowHeight    int  `json:"windowHeight"`
 	WindowMaximised bool `json:"windowMaximised"`
@@ -77,22 +76,6 @@ func (a *App) LoadConfig() (Config, error) {
 		return defaultConfig(), nil
 	}
 	return cfg, nil
-}
-
-// SaveConfig はフロントエンドからの設定保存。ウィンドウ状態（サイズ・最大化）は
-// フロント側の保存対象に含まれないため、既存ファイルの値を保持する
-// （ウィンドウ状態の更新は beforeClose の saveWindowState のみが行う）。
-func (a *App) SaveConfig(cfg Config) error {
-	if existing, err := a.LoadConfig(); err == nil {
-		if cfg.WindowWidth == 0 {
-			cfg.WindowWidth = existing.WindowWidth
-		}
-		if cfg.WindowHeight == 0 {
-			cfg.WindowHeight = existing.WindowHeight
-		}
-		cfg.WindowMaximised = existing.WindowMaximised
-	}
-	return writeConfig(cfg)
 }
 
 // writeConfig は Config をそのまま config.json へ書き込む（マージなし）。
