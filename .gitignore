@@ -1,11 +1,11 @@
+# ビルド成果物（配布物・実行バイナリ）。コミットしない。
 build/bin
 build/README.md
 /dist
+
+# フロントエンドは撤去済み（Go-SSR）。`wails build` が bindings を再生成する
+# frontend/wailsjs だけが残るため、frontend/ 全体を無視する。
+frontend/
+
+# 念のため（現行ビルドは Node/npm を使わない）。
 node_modules
-frontend/dist
-frontend/wailsjs
-frontend/package.json.md5
-frontend/README.md
-frontend/.vscode
-frontend/src/assets/fonts/
-frontend/src/assets/images/
