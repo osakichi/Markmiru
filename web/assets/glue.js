@@ -76,6 +76,15 @@
       openFind()
       return
     }
+    // Ctrl+S / Cmd+S: 「保存」メニューが無効の間（サーバがクリーン認識＝デバウンス未着を含む）
+    // はネイティブアクセラレータが発火せず、キーが WebView まで届く。ここで拾って同じ保存
+    // フロー（未送信の編集を flush してから保存）へ流す。メニューが有効なときはネイティブ側が
+    // 先にキーを消費するため二重には走らない。
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 's' || e.key === 'S')) {
+      e.preventDefault()
+      saveActive('/active/save')
+      return
+    }
     // Ctrl+A / Cmd+A: 入力欄の外では現在モードの本文だけを全選択し、ウィンドウ全体の選択を防ぐ。
     // メニュー「すべて選択」と同じ editExec に集約（編集→textarea 全選択 / 閲覧→本文のみ）。
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'a' || e.key === 'A')) {
@@ -153,33 +162,56 @@
   }
 
   // --- 2. 編集オーバーレイ: スクロール同期 --------------------------------
-  function syncEditorScroll() {
-    var ta = document.querySelector('.editor-input')
-    var hl = ta && ta.parentElement && ta.parentElement.querySelector('.hl')
-    if (hl) {
-      hl.scrollTop = ta.scrollTop
-      hl.scrollLeft = ta.scrollLeft
-    }
-  }
   // textarea のスクロールをハイライト層（.hl）へ反映（scroll はバブルしないので capture）。
+  // 入力ごとの再ハイライトは #hl の「中身だけ」を innerHTML で差し替えるため（fragments.html
+  // の edit-sync）、<pre> 要素とそのスクロール位置は原則ブラウザが保持する。
   document.addEventListener(
     'scroll',
     function (e) {
-      var t = e.target
-      if (t && t.classList && t.classList.contains('editor-input')) syncEditorScroll()
+      var ta = e.target
+      if (ta && ta.classList && ta.classList.contains('editor-input')) {
+        var hl = ta.parentElement && ta.parentElement.querySelector('.hl')
+        if (hl) {
+          hl.scrollTop = ta.scrollTop
+          hl.scrollLeft = ta.scrollLeft
+        }
+      }
     },
     true
   )
-  // 入力のたびにハイライト層は outerHTML で差し替えられ scrollTop/scrollLeft が 0 に戻る一方、
-  // textarea 側のスクロールは保たれる。再同期しないと表示だけが文書先頭へ飛び、以後キャレットの
-  // 見かけ位置と実位置がズレる。afterSwap（差し替え直後・描画前）で textarea の位置を再適用する。
-  document.body.addEventListener('htmx:afterSwap', syncEditorScroll)
+  // ただし最下部付近で行数が増える編集（改行など）では、textarea が先に伸びて自動スクロール
+  // する一方、ハイライト層は差し替え（150ms デバウンス）までの間 1 行短く、上の同期が上限で
+  // クランプされて 1 行ズレた値のまま固定され得る（差し替え後は scroll イベントが来ない）。
+  // そのため差し替え直後（afterSwap）に、対象がハイライト層のときだけ再同期する。
+  document.body.addEventListener('htmx:afterSwap', function (e) {
+    var hl = e.target
+    if (hl && hl.classList && hl.classList.contains('hl')) {
+      var ta = hl.parentElement && hl.parentElement.querySelector('.editor-input')
+      if (ta) {
+        hl.scrollTop = ta.scrollTop
+        hl.scrollLeft = ta.scrollLeft
+      }
+    }
+  })
 
   // --- 3. ネイティブメニュー / IPC → htmx ブリッジ ------------------------
   // メニュークリック/アクセラレータ（Ctrl+S 等）は Go が menu:* を発火する。
   // それを画面操作と同じ Go-SSR エンドポイントへ橋渡しする。
   function ajax(method, path, target, swap) {
     if (window.htmx) window.htmx.ajax(method, path, { target: target, swap: swap || 'innerHTML' })
+  }
+  // 保存の前処理: 編集中の textarea には未送信の内容（150ms デバウンス待ち）が残り得る。
+  // そのまま保存するとサーバは古い内容を書き込む（クリーン認識なら no-op にすらなる）ため、
+  // 保存系は必ず現在の内容を先にサーバへ同期（flush）してから保存エンドポイントを叩く。
+  function saveActive(path) {
+    var ta = document.querySelector('.editor-input')
+    if (ta && window.htmx) {
+      window.htmx
+        .ajax('POST', ta.getAttribute('hx-post'), { source: ta, values: { value: ta.value } })
+        .then(function () { ajax('POST', path, '#content') })
+      return
+    }
+    ajax('POST', path, '#content')
   }
   // 閲覧モードで本文（.markdown-body）だけを選択する（ウィンドウ全体の選択を防ぐ）。成否を返す。
   function selectPreviewAll() {
@@ -224,8 +256,8 @@
   if (R && R.EventsOn) {
     R.EventsOn('menu:new', function () { ajax('POST', '/tabs/new', '#content') })
     R.EventsOn('menu:open', function () { ajax('POST', '/tabs/open', '#content') })
-    R.EventsOn('menu:save', function () { ajax('POST', '/active/save', '#content') })
-    R.EventsOn('menu:saveAs', function () { ajax('POST', '/active/save-as', '#content') })
+    R.EventsOn('menu:save', function () { saveActive('/active/save') })
+    R.EventsOn('menu:saveAs', function () { saveActive('/active/save-as') })
     R.EventsOn('menu:print', function () { ajax('POST', '/active/print', '#content') })
     R.EventsOn('menu:toggleMode', function () { ajax('POST', '/active/mode', '#content') })
     R.EventsOn('menu:toggleSidebar', function () { ajax('POST', '/sidebar/toggle', '#sidebar', 'outerHTML') })

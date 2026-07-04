@@ -105,15 +105,48 @@ func ContentHasRemoteImages(content string) bool {
 	return mdRemoteImgRe.MatchString(content) || htmlRemoteImgRe.MatchString(content)
 }
 
-// HighlightInner は編集オーバーレイ用に、コードを chroma のクラス付きトークン列（<pre> 無し）で
-// 返す。呼び出し側が <pre class="chroma hl"> で包む。色は #markmiru-code-theme（chroma クラス）が付ける。
-func HighlightInner(code, lang string) string {
-	lexer := lexers.Get(lang)
-	if lexer == nil {
-		lexer = lexers.Fallback
-	}
-	lexer = chroma.Coalesce(lexer)
-	iterator, err := lexer.Tokenise(nil, code)
+// editorMarkdownLexer は編集オーバーレイ専用の簡易 Markdown レキサ。
+//
+// chroma 標準の markdown レキサは、行内コード規則（`[^`]+`）が改行を除外していないため、
+// レキサが認識しないフェンス（リスト内でインデントされた ```lang 等）のバッククォートと
+// 改行をまたいで対になり、複数行〜文書後半までを行内コードとして丸呑みして、以降の
+// 見出し・強調のハイライトが失われることがある。
+//
+// オーバーレイの目的は「控えめなハイライト」（見出し・強調・引用・行内コード等）だけなので、
+// **すべてのトークンが 1 行内に閉じる**規則のみで定義し、この種の巻き込みを構造的に排除する。
+// フェンスはフェンス行だけを文字列色にし、中身は素のテキストのまま（言語別の委譲はしない）。
+// 単独アンダースコアの斜体（_x_）は snake_case の誤検出を避けるため対象外。
+var editorMarkdownLexer = chroma.Coalesce(chroma.MustNewLexer(
+	&chroma.Config{Name: "markdown-overlay"},
+	func() chroma.Rules {
+		return chroma.Rules{
+			"root": {
+				{Pattern: `^#[^#\n].*\n?`, Type: chroma.GenericHeading},
+				{Pattern: `^#{2,6}[^\n]*\n?`, Type: chroma.GenericSubheading},
+				{Pattern: `^(\s*>[ \t]?)([^\n]*\n?)`, Type: chroma.ByGroups(chroma.Keyword, chroma.GenericEmph)},
+				{Pattern: "^\\s*```[^\\n]*\\n?", Type: chroma.LiteralString},
+				{Pattern: `^(\s*)([*-] |\d+\. )`, Type: chroma.ByGroups(chroma.Text, chroma.Keyword)},
+				chroma.Include("inline"),
+			},
+			"inline": {
+				{Pattern: "`[^`\\n]+`", Type: chroma.LiteralStringBacktick},
+				{Pattern: `\*\*[^*\n]+\*\*`, Type: chroma.GenericStrong},
+				{Pattern: `__[^_\n]+__`, Type: chroma.GenericStrong},
+				{Pattern: `\*[^*\n]+\*`, Type: chroma.GenericEmph},
+				{Pattern: `~~[^~\n]+~~`, Type: chroma.GenericDeleted},
+				{Pattern: `(!?\[)([^]\n]+)(\])(\()([^)\n]+)(\))`, Type: chroma.ByGroups(chroma.Text, chroma.NameTag, chroma.Text, chroma.Text, chroma.NameAttribute, chroma.Text)},
+				{Pattern: "[^`*_~\\[\\n]+", Type: chroma.Text},
+				{Pattern: `.|\n`, Type: chroma.Text},
+			},
+		}
+	},
+))
+
+// HighlightInner は編集オーバーレイ用に、Markdown を専用の簡易レキサ（editorMarkdownLexer）で
+// クラス付きトークン列（<pre> 無し）にして返す。呼び出し側が <pre class="chroma hl"> で包む。
+// 色は #markmiru-code-theme（chroma クラス）が付ける。
+func HighlightInner(code string) string {
+	iterator, err := editorMarkdownLexer.Tokenise(nil, code)
 	if err != nil {
 		return html.EscapeString(code)
 	}

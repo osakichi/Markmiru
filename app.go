@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/wailsapp/wails/v2/pkg/menu"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -79,30 +80,48 @@ func (a *App) emit(event string) {
 	runtime.EventsEmit(a.ctx, event)
 }
 
-// SetEditMenuEnabled は手組み「編集」メニュー（Windows / Linux）の編集専用項目
-// （取り消し/やり直し/切り取り/貼り付け）の有効・無効を、編集可能か（編集モードか）で切り替える。
-// サーバが本文描画のたびにアクティブモードに応じて呼ぶ（web の syncEditMenu）。macOS は
-// ネイティブ編集メニューが文脈に応じて自動制御するため何もしない。
-func (a *App) SetEditMenuEnabled(canEdit bool) {
-	if isMacOS || a.ctx == nil {
+// setMenuItemsEnabled は項目群の有効/無効を切り替えてネイティブメニューを再描画する
+// （編集メニュー・保存メニュー共通の下回り）。
+func (a *App) setMenuItemsEnabled(items []*menu.MenuItem, enabled bool) {
+	if a.ctx == nil || len(items) == 0 {
 		return
 	}
-	for _, it := range editOnlyMenuItems {
-		it.Disabled = !canEdit
+	for _, it := range items {
+		it.Disabled = !enabled
 	}
 	runtime.MenuUpdateApplicationMenu(a.ctx)
 }
 
-// SetSaveMenuEnabled はメニュー「ファイル → 保存」の有効・無効を切り替える。
-// アクティブタブが dirty（未保存の変更あり）のときだけ有効にする（未変更タブへの保存は
-// サーバ側でも no-op のため、入口のメニューを塞いで操作不能を明示する）。ファイルメニューは
-// 全 OS 手組みのため macOS も対象。サーバ（web の syncSaveMenu）が変化時に呼ぶ。
-func (a *App) SetSaveMenuEnabled(canSave bool) {
-	if a.ctx == nil || saveMenuItem == nil {
+// SetEditMenuEnabled は手組み「編集」メニュー（Windows / Linux）の編集専用項目
+// （取り消し/やり直し/切り取り/貼り付け）の有効・無効を、編集可能か（編集モードか）で切り替える。
+// サーバ（web の syncMenus）が状態の変化時に呼ぶ。macOS はネイティブ編集メニューが
+// 文脈に応じて自動制御するため何もしない。
+func (a *App) SetEditMenuEnabled(canEdit bool) {
+	if isMacOS {
 		return
 	}
-	saveMenuItem.Disabled = !canSave
-	runtime.MenuUpdateApplicationMenu(a.ctx)
+	a.setMenuItemsEnabled(editOnlyMenuItems, canEdit)
+}
+
+// SetSaveMenuEnabled はメニュー「ファイル → 保存」の有効・無効を切り替える。
+// アクティブタブが dirty または保存先未定の無題のときだけ有効にする（未変更タブへの保存は
+// サーバ側でも no-op のため、入口のメニューを塞いで操作不能を明示する）。ファイルメニューは
+// 全 OS 手組みのため macOS も対象。サーバ（web の syncMenus）が変化時に呼ぶ。
+func (a *App) SetSaveMenuEnabled(canSave bool) {
+	if saveMenuItem == nil {
+		return
+	}
+	a.setMenuItemsEnabled([]*menu.MenuItem{saveMenuItem}, canSave)
+}
+
+// SetModeMenuEnabled はメニュー「表示 → 閲覧/編集切替」の有効・無効を切り替える。
+// 読み取り専用タブ（About/ライセンス）とタブ無しでは無効にする（サーバ側の SetMode no-op は
+// 防御として残る）。サーバ（web の syncMenus）が変化時に呼ぶ。
+func (a *App) SetModeMenuEnabled(canToggle bool) {
+	if modeMenuItem == nil {
+		return
+	}
+	a.setMenuItemsEnabled([]*menu.MenuItem{modeMenuItem}, canToggle)
 }
 
 // OpenExternalURL は URL を OS の既定ブラウザ／メーラで開く（プレビュー内の外部リンク用）。

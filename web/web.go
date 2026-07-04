@@ -41,6 +41,14 @@ var shellTmpl = template.Must(template.New("").Funcs(template.FuncMap{
 		}
 		return m
 	},
+	// opts は「値, 表示名」の並びから selectfield 用の選択肢列を作る（固定選択肢のインライン定義用）。
+	"opts": func(kv ...string) []optionVM {
+		out := make([]optionVM, 0, len(kv)/2)
+		for i := 0; i+1 < len(kv); i += 2 {
+			out = append(out, optionVM{Value: kv[i], Label: kv[i+1]})
+		}
+		return out
+	},
 }).ParseFS(templatesFS, "templates/*.html"))
 
 // --- テンプレートのビューモデル ---
@@ -65,12 +73,10 @@ type contentVM struct {
 	Highlighted template.HTML // chroma ハイライト層
 }
 
-// styleOptVM は設定パネルのスタイル選択肢。
-type styleOptVM struct {
-	ID      string
-	Name    string
-	Builtin bool
-	Active  bool
+// optionVM は selectfield テンプレートの選択肢（値と表示名）。
+type optionVM struct {
+	Value string
+	Label string
 }
 
 type shellVM struct {
@@ -89,16 +95,10 @@ type shellVM struct {
 	Dialog *dialogVM
 	// SidebarOpen はサイドバーの開閉状態。
 	SidebarOpen bool
-	// ActiveID はアクティブタブ ID（保存ボタンの対象）。
-	ActiveID string
-	// ActiveMode はアクティブタブのモード（"view"/"source"）、ActiveReadOnly は読み取り専用か
-	// （モード切替ボタンの表示・ラベルに使う）。
-	ActiveMode     string
-	ActiveReadOnly bool
 
 	// 設定パネル
 	SettingsOpen    bool
-	Styles          []styleOptVM
+	Styles          []optionVM // スタイル選択プルダウンの選択肢（Value=ID / Label=表示名）
 	ActiveStyle     style.Style // 編集フィールドの現在値
 	ActiveEditable  bool        // アクティブが編集可能（非 builtin）か
 	FontOptions     []style.FontOption
@@ -160,13 +160,19 @@ type Host interface {
 	// SetEditMenuEnabled は手組み編集メニュー（Win/Linux）の編集専用項目（取り消し/やり直し/
 	// 切り取り/貼り付け）の有効・無効を切り替える。アクティブタブが編集モードのとき canEdit=true。
 	// macOS はネイティブ編集メニューが文脈で自動制御するため no-op。
-	// サーバがモードを保持するため、フロント通知ではなくサーバ主導で本文描画のたびに同期する。
+	// サーバ主導: 各 POST の処理後に syncMenus が状態から判定し、変化時だけ呼ぶ。
 	SetEditMenuEnabled(canEdit bool)
 	// SetSaveMenuEnabled はメニュー「ファイル → 保存」の有効・無効を切り替える。アクティブタブが
-	// dirty（未保存の変更あり）のとき canSave=true。未変更タブへの保存はサーバ側でも no-op だが、
-	// 入口のメニュー自体を非活性にして操作できないことを示す。ファイルメニューは全 OS 手組みのため
-	// macOS でも有効。サーバ主導で各リクエスト処理後に dirty 状態の変化時だけ呼ばれる。
+	// dirty（未保存の変更あり）または保存先未定の無題のとき canSave=true。未変更タブへの保存は
+	// サーバ側でも no-op だが、入口のメニュー自体を非活性にして操作できないことを示す。
+	// ファイルメニューは全 OS 手組みのため macOS でも有効。
+	// サーバ主導: 各 POST の処理後に syncMenus が状態から判定し、変化時だけ呼ぶ。
 	SetSaveMenuEnabled(canSave bool)
+	// SetModeMenuEnabled はメニュー「表示 → 閲覧/編集切替」の有効・無効を切り替える。
+	// 読み取り専用タブ（About/ライセンス）とタブ無しでは無効（サーバ側の SetMode no-op は
+	// 防御として残しつつ、入口のメニューを塞いで操作不能を明示する）。
+	// サーバ主導: 各 POST の処理後に syncMenus が状態から判定し、変化時だけ呼ぶ。
+	SetModeMenuEnabled(canToggle bool)
 	// Quit はアプリを終了する（終了ループで未保存タブをすべて処理し終えた後に呼ぶ）。
 	Quit()
 	// ReadFile は指定パスを読み込み、ファイル名と内容を返す（不在ファイルの「再試行」用）。
@@ -181,11 +187,13 @@ type Server struct {
 	state *State
 	host  Host
 
-	// 「保存」メニューへ最後に通知した有効/無効（syncSaveMenu の変化検出用。
-	// 編集入力のたびに同期が走るため、変化したときだけ Host へ伝える）。
-	saveMenuMu    sync.Mutex
-	saveMenuKnown bool
-	saveMenuOn    bool
+	// menuLast は Host へ最後に通知したメニュー有効状態（syncMenus の変化検出用）。
+	// 状態の取得から通知までを menuMu 内で行い、並行リクエストで通知順が記録と逆転して
+	// メニューが実状態と食い違ったまま固着するのを防ぐ。初期値は buildMenu の初期状態と
+	// 一致させてあり（編集専用項目・保存＝無効、閲覧/編集切替＝有効。canToggle は
+	// NewHandler で true に初期化）、起動直後の無駄なメニュー再構築を避ける。
+	menuMu   sync.Mutex
+	menuLast struct{ canEdit, canSave, canToggle bool }
 }
 
 // NewHandler は Go-SSR の http.Handler を返す。
@@ -195,6 +203,9 @@ type Server struct {
 //   - GET /assets/...         … 同梱の静的アセット（htmx / glue.js / app.css）
 func NewHandler(state *State, host Host) http.Handler {
 	s := &Server{state: state, host: host}
+	// buildMenu は「閲覧/編集切替」を有効のまま構築する（起動時のアクティブは通常タブか
+	// 無題＝切替可。読み取り専用タブはセッション復元されない）ため、基準値も有効に合わせる。
+	s.menuLast.canToggle = true
 	mux := http.NewServeMux()
 	sub, err := fs.Sub(assetsFS, "assets")
 	if err != nil {
@@ -237,34 +248,45 @@ func NewHandler(state *State, host Host) http.Handler {
 	mux.HandleFunc("POST /settings/delete", s.serveDeleteStyle)
 	mux.HandleFunc("POST /settings/export", s.serveExportStyle)
 	mux.HandleFunc("POST /settings/import", s.serveImportStyle)
-	return withCSP(s.withSaveMenuSync(mux))
+	return withCSP(s.withMenuSync(mux))
 }
 
-// withSaveMenuSync は各リクエストの処理後に「保存」メニューの有効/無効をアクティブタブの
-// dirty 状態へ同期するミドルウェア。dirty を変え得る操作（編集・保存・タブ切替/開閉・終了ループ等）
-// をすべてリクエスト後の一点で拾う。実際の Host 通知は変化時のみ（syncSaveMenu）。
-func (s *Server) withSaveMenuSync(next http.Handler) http.Handler {
+// withMenuSync は各 POST の処理後に、ネイティブメニュー（編集専用項目・保存）の有効/無効を
+// アプリ状態へ同期するミドルウェア。モード・dirty・アクティブタブを変え得る操作はすべて POST
+// （GET は描画と静的アセットのみ）なので、POST 後の一点で漏れなく拾える。
+// シェル描画（GET /）でも同期する: 起動直後に無題タブがアクティブな場合（セッションなし）、
+// メニューの初期値（無効）と実状態（無題＝保存可）がずれるため、初回表示で合わせる。
+func (s *Server) withMenuSync(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		next.ServeHTTP(w, r)
-		s.syncSaveMenu()
+		if r.Method == http.MethodPost || r.URL.Path == "/" {
+			s.syncMenus()
+		}
 	})
 }
 
-// syncSaveMenu はメニュー「ファイル → 保存」の有効/無効をアクティブタブの dirty 状態に同期する
-// （dirty のときだけ有効。未変更タブへの保存は no-op のため入口から塞ぐ＝§5.2）。
-// 編集入力（150ms デバウンス）のたびに呼ばれるため、前回通知した値から変化したときだけ
-// Host へ伝え、ネイティブメニューの不要な再構築を避ける。
-func (s *Server) syncSaveMenu() {
+// syncMenus は現在のメニュー有効条件（編集モードか / 保存できるか）を取得し、前回通知から
+// 変化した項目だけ Host へ伝える（ネイティブメニューの不要な再構築を避ける）。
+// 取得・記録・通知を menuMu 内で行うことで、並行リクエストの通知が記録と逆順に届いて
+// メニューが実状態と食い違ったまま固着するのを防ぐ（最後の同期が必ず最新状態を反映する）。
+func (s *Server) syncMenus() {
 	if s.host == nil {
 		return
 	}
-	on := s.state.IsDirty(s.state.ActiveID())
-	s.saveMenuMu.Lock()
-	changed := !s.saveMenuKnown || s.saveMenuOn != on
-	s.saveMenuKnown, s.saveMenuOn = true, on
-	s.saveMenuMu.Unlock()
-	if changed {
-		s.host.SetSaveMenuEnabled(on)
+	s.menuMu.Lock()
+	defer s.menuMu.Unlock()
+	canEdit, canSave, canToggle := s.state.MenuStates()
+	if canEdit != s.menuLast.canEdit {
+		s.menuLast.canEdit = canEdit
+		s.host.SetEditMenuEnabled(canEdit)
+	}
+	if canSave != s.menuLast.canSave {
+		s.menuLast.canSave = canSave
+		s.host.SetSaveMenuEnabled(canSave)
+	}
+	if canToggle != s.menuLast.canToggle {
+		s.menuLast.canToggle = canToggle
+		s.host.SetModeMenuEnabled(canToggle)
 	}
 }
 
@@ -291,6 +313,16 @@ func withCSP(next http.Handler) http.Handler {
 	})
 }
 
+// editorHighlight は編集オーバーレイのハイライト層（<pre class="hl">）用の HTML を返す。
+// 末尾に改行を 1 つ補う: <pre> は末尾の改行 1 つを行として描画しないが、textarea は
+// 末尾改行の後ろにキャレット行を 1 行持つ。補わないと改行で終わる文書で両層の高さが
+// 1 行分ずれ、最下部までスクロールしたときにハイライト層だけがクランプされて
+// キャレットの見かけ位置が 1 行ズレる。改行で終わらない文書では、補った改行が
+// 「描画されない末尾改行」になるだけで表示は変わらない。
+func editorHighlight(value string) template.HTML {
+	return template.HTML(render.HighlightInner(value) + "\n")
+}
+
 // renderContent は描画要求を本文ビューモデルに変換する（render パイプラインを呼ぶ）。
 // リモート画像を含み、かつポリシー未確認なら確認ダイアログ（dialogVM）も返す。
 // scheme は本文ラッパに出力し、glue.js の mermaid テーマ切替に使う。
@@ -305,7 +337,7 @@ func renderContent(req renderReq, scheme string) (contentVM, *dialogVM) {
 			Scheme:      scheme,
 			TabID:       req.TabID,
 			Raw:         req.Content,
-			Highlighted: template.HTML(render.HighlightInner(req.Content, "markdown")),
+			Highlighted: editorHighlight(req.Content),
 		}, nil
 	}
 	// 閲覧モード。
@@ -325,14 +357,6 @@ func (s *Server) renderActive() (contentVM, *dialogVM) {
 	return renderContent(s.state.RenderReqActive(), s.state.ActiveStyle().ColorScheme)
 }
 
-// syncEditMenu はネイティブ編集メニュー（Win/Linux 手組み）の有効/無効をアクティブモードに同期する。
-// アクティブ本文を描画する各所（シェル・nav・印刷）から呼ぶ。編集モード（"source"）でのみ有効化。
-func (s *Server) syncEditMenu(mode string) {
-	if s.host != nil {
-		s.host.SetEditMenuEnabled(mode == "source")
-	}
-}
-
 // settingsFields は VM に設定パネル用の情報（開閉・スタイル一覧・アクティブスタイル）を詰める。
 func (s *Server) settingsFields(vm *shellVM) {
 	active := s.state.ActiveStyle()
@@ -342,7 +366,7 @@ func (s *Server) settingsFields(vm *shellVM) {
 	vm.FontOptions = style.FontOptions()
 	vm.CodeFontOptions = style.CodeFontOptions()
 	for _, p := range s.state.Styles() {
-		vm.Styles = append(vm.Styles, styleOptVM{ID: p.ID, Name: p.Name, Builtin: p.Builtin, Active: p.ID == active.ID})
+		vm.Styles = append(vm.Styles, optionVM{Value: p.ID, Label: p.Name})
 	}
 }
 
@@ -352,20 +376,15 @@ func (s *Server) serveShell(w http.ResponseWriter, _ *http.Request) {
 	if mp := s.state.FirstMissing(); mp != "" {
 		dlg = &dialogVM{Kind: "missing-file", Path: mp} // 不在ファイル確認を優先
 	}
-	mode, ro := s.state.ActiveMeta()
-	s.syncEditMenu(mode)
 	vm := shellVM{
 		Title:          "Markmiru",
 		Tabs:           s.state.TabVMs(),
 		Content:        content,
 		StyleVars:      template.CSS(style.CSS(st)),
 		CodeCSS:        template.CSS(render.HighlightCSS(st.ColorScheme)),
-		Scheme:         st.ColorScheme,
-		Dialog:         dlg,
-		SidebarOpen:    s.state.SidebarOpen(),
-		ActiveID:       s.state.ActiveID(),
-		ActiveMode:     mode,
-		ActiveReadOnly: ro,
+		Scheme:      st.ColorScheme,
+		Dialog:      dlg,
+		SidebarOpen: s.state.SidebarOpen(),
 		CustomCSS:      template.CSS(st.CustomCSS),
 		PrintCodeCSS:   template.CSS(render.HighlightCSS("light")),
 	}
@@ -377,16 +396,11 @@ func (s *Server) serveShell(w http.ResponseWriter, _ *http.Request) {
 // navVM はタブ操作後の応答用 VM（本文＋タブバー＋サイドバー＋ダイアログを更新）。
 func (s *Server) navVM() shellVM {
 	content, dlg := s.renderActive()
-	mode, ro := s.state.ActiveMeta()
-	s.syncEditMenu(mode)
 	return shellVM{
-		Tabs:           s.state.TabVMs(),
-		Content:        content,
-		Dialog:         dlg,
-		SidebarOpen:    s.state.SidebarOpen(),
-		ActiveID:       s.state.ActiveID(),
-		ActiveMode:     mode,
-		ActiveReadOnly: ro,
+		Tabs:        s.state.TabVMs(),
+		Content:     content,
+		Dialog:      dlg,
+		SidebarOpen: s.state.SidebarOpen(),
 	}
 }
 
@@ -429,15 +443,10 @@ func (s *Server) serveContent(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	mode, ro := s.state.ActiveMeta()
 	vm := shellVM{
-		Tabs:           s.state.TabVMs(),
-		ActiveID:       s.state.ActiveID(),
-		ActiveMode:     mode,
-		ActiveReadOnly: ro,
+		Tabs: s.state.TabVMs(),
 		Content: contentVM{
-			TabID:       id,
-			Highlighted: template.HTML(render.HighlightInner(value, "markdown")),
+			Highlighted: editorHighlight(value),
 		},
 	}
 	htmlHeader(w)
@@ -468,14 +477,16 @@ func (s *Server) serveClose(w http.ResponseWriter, r *http.Request) {
 		}
 	case "save":
 		if !s.saveTabForClose(id) {
-			s.serveNav(w) // 保存先選択をキャンセル → 閉じない（ダイアログはクリア）
+			s.serveNavKeep(w) // 保存先選択をキャンセル → 閉じない（本文は触れずダイアログだけ閉じる）
 			return
 		}
 		s.state.Close(id)
 	case "discard":
 		s.state.Close(id)
 	case "cancel":
-		// 現状維持（nav でダイアログをクリア）
+		// 現状維持。本文には触れず、ダイアログだけ閉じる（閲覧位置・キャレットを保つ）。
+		s.serveNavKeep(w)
+		return
 	}
 	s.serveNav(w)
 }
@@ -495,6 +506,11 @@ func (s *Server) saveTabForClose(id string) bool {
 	if !ok {
 		return false
 	}
+	// 既に clean なら書き込まず成功扱い（例: ダイアログ表示中に Ctrl+S で保存済み）。
+	// save() と同じ規律で、無変更タブの上書き＝外部編集を古い内容で潰す事故を防ぐ。
+	if path != "" && !s.state.IsDirty(id) {
+		return true
+	}
 	if path == "" {
 		if s.host == nil {
 			return false
@@ -506,11 +522,22 @@ func (s *Server) saveTabForClose(id string) bool {
 		path = chosen
 	}
 	if s.host != nil {
-		if err := s.host.WriteFile(path, content); err != nil {
-			return false
-		}
-		s.state.MarkSaved(id, path)
+		return s.writeTab(id, path, content)
 	}
+	return true
+}
+
+// writeTab は content を path へ書き込み、成功したら「書き込んだスナップショット」を基準に
+// 保存済み印を付ける（保存書き込みの共通コア。save と saveTabForClose の両方が使う）。
+// MarkSaved にスナップショットを渡すため、書き込み中に届いた編集は dirty のまま残る。
+func (s *Server) writeTab(id, path, content string) bool {
+	if s.host == nil {
+		return false
+	}
+	if err := s.host.WriteFile(path, content); err != nil {
+		return false
+	}
+	s.state.MarkSaved(id, path, content)
 	return true
 }
 
@@ -612,7 +639,7 @@ func (s *Server) serveQuitStep(w http.ResponseWriter, r *http.Request) {
 	case "save":
 		if !s.saveTabForClose(id) {
 			s.state.ClearQuitResolved()
-			s.serveNav(w) // 保存先選択をキャンセル → 終了を中止（印も解除）
+			s.serveNavKeep(w) // 保存先選択をキャンセル → 終了を中止（印も解除。本文は触れない）
 			return
 		}
 		// 保存で clean になるため、次の対象から自然に外れる。
@@ -620,7 +647,7 @@ func (s *Server) serveQuitStep(w http.ResponseWriter, r *http.Request) {
 		s.state.MarkQuitResolved(id) // 閉じずに終了を許可（内容は保持）
 	case "cancel":
 		s.state.ClearQuitResolved()
-		s.serveNav(w) // 終了を中止（全タブ元の状態へ）
+		s.serveNavKeep(w) // 終了を中止（全タブ元の状態へ。本文には触れず閲覧位置を保つ）
 		return
 	}
 	s.continueQuit(w)
@@ -648,13 +675,15 @@ func (s *Server) serveFindOpen(w http.ResponseWriter, _ *http.Request) {
 	_ = shellTmpl.ExecuteTemplate(w, "find-bar", nil)
 }
 
+// shellOOBVM はタブバー/サイドバー（navkeep・sidebar 断片）の描画に必要な最小 VM を返す。
+func (s *Server) shellOOBVM() shellVM {
+	return shellVM{Tabs: s.state.TabVMs(), SidebarOpen: s.state.SidebarOpen()}
+}
+
 func (s *Server) serveSidebarToggle(w http.ResponseWriter, _ *http.Request) {
 	s.state.ToggleSidebar()
 	htmlHeader(w)
-	_ = shellTmpl.ExecuteTemplate(w, "sidebar", shellVM{
-		Tabs:        s.state.TabVMs(),
-		SidebarOpen: s.state.SidebarOpen(),
-	})
+	_ = shellTmpl.ExecuteTemplate(w, "sidebar", s.shellOOBVM())
 }
 
 func (s *Server) serveNav(w http.ResponseWriter) {
@@ -662,14 +691,15 @@ func (s *Server) serveNav(w http.ResponseWriter) {
 	_ = shellTmpl.ExecuteTemplate(w, "nav", s.navVM())
 }
 
-// serveNavKeep は本文（#content）を差し替えず、タブバー/サイドバーだけを OOB 更新する
-// （HX-Reswap: none。htmx は本文スワップを行わず OOB のみ処理する）。上書き保存のように
-// 表示内容が変わらない操作で、閲覧のスクロール位置や編集キャレットを保つために使う。
+// serveNavKeep は本文（#content）を差し替えず、タブバー/サイドバー/ダイアログ host のみ
+// OOB 更新する（HX-Reswap: none。htmx は本文スワップを行わず OOB のみ処理する）。
+// 上書き保存やダイアログのキャンセルのように表示内容が変わらない操作で、閲覧のスクロール
+// 位置や編集キャレットを保つために使う。Dialog は nil なので表示中のダイアログは閉じる
+// （保存で前提が消えた確認ダイアログを残さない）。
 func (s *Server) serveNavKeep(w http.ResponseWriter) {
-	vm := shellVM{Tabs: s.state.TabVMs(), SidebarOpen: s.state.SidebarOpen()}
 	w.Header().Set("HX-Reswap", "none")
 	htmlHeader(w)
-	_ = shellTmpl.ExecuteTemplate(w, "navkeep", vm)
+	_ = shellTmpl.ExecuteTemplate(w, "navkeep", s.shellOOBVM())
 }
 
 // serveOpen は OS のファイル選択を開き、選択ファイルをタブで開く（最後をアクティブ）。
@@ -733,16 +763,11 @@ func (s *Server) serveActiveMode(w http.ResponseWriter, r *http.Request) {
 func (s *Server) serveActivePrint(w http.ResponseWriter, _ *http.Request) {
 	s.state.SetViewMode(s.state.ActiveID())
 	content, dlg := renderContent(s.state.RenderReqActive(), "light")
-	mode, ro := s.state.ActiveMeta()
-	s.syncEditMenu(mode)
 	vm := shellVM{
-		Tabs:           s.state.TabVMs(),
-		Content:        content,
-		Dialog:         dlg,
-		SidebarOpen:    s.state.SidebarOpen(),
-		ActiveID:       s.state.ActiveID(),
-		ActiveMode:     mode,
-		ActiveReadOnly: ro,
+		Tabs:        s.state.TabVMs(),
+		Content:     content,
+		Dialog:      dlg,
+		SidebarOpen: s.state.SidebarOpen(),
 	}
 	w.Header().Set("HX-Trigger-After-Settle", "do-print")
 	htmlHeader(w)
@@ -775,16 +800,16 @@ func (s *Server) save(w http.ResponseWriter, r *http.Request, id string, forceDi
 		}
 		path = chosen
 	}
-	if s.host != nil {
-		if err := s.host.WriteFile(path, content); err == nil {
-			s.state.MarkSaved(id, path)
-		}
-	}
+	s.writeTab(id, path, content)
 	if path != prevPath {
-		// 保存先が決まった/変わった（無題の初回保存・名前を付けて保存）: 閲覧の画像解決の
-		// 基点（BaseDir）が変わるため本文を再描画する。
-		s.serveNav(w)
-		return
+		// 保存先が決まった/変わった（無題の初回保存・名前を付けて保存）: 閲覧表示中の
+		// アクティブタブなら画像解決の基点（BaseDir）が変わるため本文を再描画する。
+		// 編集モード（textarea）は BaseDir と無関係なので再描画せずキャレットを保つ
+		// （タブ名の変化はタブバー/サイドバーの OOB が反映する）。
+		if mode, _ := s.state.ActiveMeta(); id == s.state.ActiveID() && mode != "source" {
+			s.serveNav(w)
+			return
+		}
 	}
 	// 上書き保存: 表示内容は変わらないため本文を差し替えず、スクロール位置・キャレットを保つ。
 	s.serveNavKeep(w)

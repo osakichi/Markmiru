@@ -47,7 +47,7 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 
 ### WebView 表示層（`web/assets/`）
 
-- `glue.js` — WebView 内の唯一の自作 JS。「仕組み的グルー」に限定: mermaid 再描画、編集オーバーレイのスクロール同期、ネイティブメニュー/IPC の Wails イベント（`window.runtime.EventsOn('menu:*' / 'ipc:open-file' / 'app:request-quit')`）→ htmx.ajax ブリッジ、ダイアログのフォーカス/Esc/危険確認の遅延活性化、ページ内検索（CSS Custom Highlight API）、外部リンクの遷移制御、印刷トリガ、設定の対入力同期。
+- `glue.js` — WebView 内の唯一の自作 JS。「仕組み的グルー」に限定: mermaid 再描画、編集オーバーレイのスクロール同期、保存前の未送信編集 flush（menu:save/saveAs・Ctrl+S フォールバック）、ネイティブメニュー/IPC の Wails イベント（`window.runtime.EventsOn('menu:*' / 'ipc:open-file' / 'app:request-quit')`）→ htmx.ajax ブリッジ、ダイアログのフォーカス/Esc/危険確認の遅延活性化、ページ内検索（CSS Custom Highlight API）、外部リンクの遷移制御、印刷トリガ、設定の対入力同期。
 - htmx / mermaid.min.js — 既製ライブラリ（vendoring 済み）。htmx が操作→Go 要求→DOM 断片差し替えを担う。
 - CSS（`app.css` / `markdown.css`）＋ 同梱フォント（`fonts.css` / `fonts/*.woff2`）。本文配色・組版は Go 出力のスタイル変数（`#styleblock`）。
 
@@ -55,7 +55,7 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 
 - **モードは閲覧（`view`）重視。** セッション復元時は終了時のモードに関わらず常に閲覧モードで開く（終了時のモードは保存しない）。編集モードは**透明 `<textarea>` に chroma ハイライト層を重ねるオーバーレイ**（CodeMirror ではない）。
 - **セキュリティ防御**：bluemonday でサニタイズ、**CSP をミドルウェア（`web.NewHandler`）で全レスポンスに注入**（`default-src 'none'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http: https:; font-src 'self' data:; connect-src 'self'; …`。`unsafe-eval` は mermaid/htmx の Function 用）。外部リンクはクリック時に確認ダイアログを挟み `OpenExternalURL`（`BrowserOpenURL`）で OS ブラウザへ委譲。外部画像はファイルごとに表示可否を確認。ローカル画像は `render` パッケージが data URI 化（相対・絶対・ルート相対パス対応）。
-- **メニュー処理の OS 分担**：macOS は `menu.EditMenu()` のネイティブ標準編集メニュー（ラベルは英語固定の既知制約）。Windows / Linux は日本語ラベルで手組みし、編集専用項目は閲覧モードで非活性化する。**有効/無効はサーバ主導**：本文描画のたびに `web.Host.SetEditMenuEnabled(mode=="source")` を呼ぶ（フロント通知ではない）。
+- **メニュー処理の OS 分担**：macOS は `menu.EditMenu()` のネイティブ標準編集メニュー（ラベルは英語固定の既知制約）。Windows / Linux は日本語ラベルで手組みし、編集専用項目は閲覧モードで非活性化する。「ファイル → 保存」は dirty または無題のときだけ有効（全 OS）。**有効/無効はサーバ主導**：`web` のミドルウェア（`withMenuSync`）が各 POST 後に状態から一括判定し、変化時だけ `Host.SetEditMenuEnabled` / `SetSaveMenuEnabled` を呼ぶ（フロント通知ではない）。
 
 ## 要件と優先度
 
@@ -97,7 +97,7 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 | サニタイズ | **bluemonday**（Go） | 許可リストで無害化（script 等除去・外部リンクへ `rel` 付与・外部画像の遮断制御） |
 | セキュリティ | **CSP**（ミドルウェアで全レスポンスに注入） | `default-src 'none'; script-src 'self' 'unsafe-eval'; …`。外部リンクは確認ダイアログ後 `BrowserOpenURL` |
 | PDF 出力 | WebView の印刷 → PDF | 専用ライブラリ不要 |
-| スタイル変更 | Go 生成の CSS 変数（テーマ切替） | 設定はモーダルで GUI 編集・JSON 入出力 |
+| スタイル変更 | Go 生成の CSS 変数（テーマ切替） | 設定はモーダルで GUI 編集。JSON 入出力はメニュー「ファイル → スタイル」 |
 | 同梱フォント | **Noto Sans/Serif/Mono JP**（woff2 を直 vendor） | `web/assets/fonts/`。@fontsource/npm は撤去 |
 | マルチタブ | Go 状態（`web/state.go`） | 1ウィンドウ内のタブバーで管理 |
 

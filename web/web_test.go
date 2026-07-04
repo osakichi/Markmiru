@@ -32,6 +32,7 @@ type fakeHost struct {
 	importContent   string
 	editMenuEnabled bool              // SetEditMenuEnabled の最後の値
 	saveMenuEnabled bool              // SetSaveMenuEnabled の最後の値
+	modeMenuEnabled bool              // SetModeMenuEnabled の最後の値
 	quitCalled      bool              // Quit が呼ばれたか
 	readFiles       map[string]string // ReadFile が返す内容（path→content）。無ければ ok=false
 	openedURL       string            // OpenURL に渡された最後の URL
@@ -52,6 +53,7 @@ func (h *fakeHost) ExportStyleDialog(string) (string, error) { return h.exportPa
 func (h *fakeHost) ImportStyleDialog() (string, error)       { return h.importContent, nil }
 func (h *fakeHost) SetEditMenuEnabled(canEdit bool)          { h.editMenuEnabled = canEdit }
 func (h *fakeHost) SetSaveMenuEnabled(canSave bool)          { h.saveMenuEnabled = canSave }
+func (h *fakeHost) SetModeMenuEnabled(canToggle bool)        { h.modeMenuEnabled = canToggle }
 func (h *fakeHost) Quit()                                    { h.quitCalled = true }
 func (h *fakeHost) ReadFile(path string) (string, string, bool) {
 	content, ok := h.readFiles[path]
@@ -64,6 +66,22 @@ func (h *fakeHost) OpenURL(url string) { h.openedURL = url }
 
 // newH は host 不要のテスト向けに空の fakeHost で Handler を作る。
 func newH(st *State) http.Handler { return NewHandler(st, &fakeHost{}) }
+
+// assertNavKeep は応答が navkeep（本文差し替えなし・シェル OOB のみ）であることを検証する:
+// HX-Reswap: none、本文断片を含まない、タブバー/サイドバー/ダイアログ host の OOB を含む。
+func assertNavKeep(t *testing.T, rec *httptest.ResponseRecorder) {
+	t.Helper()
+	if rec.Header().Get("HX-Reswap") != "none" {
+		t.Errorf("response should carry HX-Reswap: none (keep the view untouched)")
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, "preview-scroll") || strings.Contains(body, "editor-input") {
+		t.Errorf("navkeep response must not contain a content fragment: %s", body)
+	}
+	if !strings.Contains(body, `id="tabbar"`) || !strings.Contains(body, `id="sidebar"`) || !strings.Contains(body, `id="dialog-host"`) {
+		t.Errorf("navkeep response should OOB-update tabbar/sidebar/dialog-host: %s", body)
+	}
+}
 
 func TestServeShell(t *testing.T) {
 	rec := do(newH(testState()), "GET", "/")
@@ -347,10 +365,27 @@ func TestEditedThenRevertedStaysDirty(t *testing.T) {
 	if rec.Header().Get("HX-Retarget") != "#dialog-host" {
 		t.Errorf("edited-then-reverted tab should still prompt on close")
 	}
-	// 保存すると clean に戻る。
-	st.MarkSaved(tab.ID, "/d/a.md")
+	// 保存すると clean に戻る（書き込んだスナップショット＝現在値なら）。
+	st.MarkSaved(tab.ID, "/d/a.md", "A")
 	if st.IsDirty(tab.ID) {
 		t.Errorf("after save, tab should be clean again")
+	}
+}
+
+// 書き込み I/O 中にさらに編集が届いた場合、MarkSaved は「書き込んだスナップショット」を
+// 基準にするため dirty のまま残る（取りこぼした編集の clean 誤認＝サイレント消失を防ぐ）。
+func TestMarkSavedKeepsDirtyWhenEditedDuringWrite(t *testing.T) {
+	st := NewState()
+	tab := st.AddTab("/d/a.md", "a.md", "A")
+	st.SetMode(tab.ID)
+	st.UpdateContent(tab.ID, "A!") // 保存対象のスナップショット
+	st.UpdateContent(tab.ID, "A!!") // WriteFile 中に届いた編集（未書き込み）
+	st.MarkSaved(tab.ID, "/d/a.md", "A!")
+	if !st.IsDirty(tab.ID) {
+		t.Errorf("edit arriving during write must keep the tab dirty")
+	}
+	if st.HasUnsaved() != true {
+		t.Errorf("quit confirmation must still trigger for the unwritten edit")
 	}
 }
 
@@ -364,9 +399,44 @@ func TestCloseDirtyDiscard(t *testing.T) {
 
 func TestCloseDirtyCancel(t *testing.T) {
 	st, id := dirtyTab("/d/a.md")
-	do(newH(st), "POST", "/tabs/"+id+"/close?choice=cancel")
+	rec := do(newH(st), "POST", "/tabs/"+id+"/close?choice=cancel")
 	if len(st.TabVMs()) != 1 {
 		t.Errorf("cancel should keep the tab")
+	}
+	// キャンセルは本文に触れず（閲覧位置・キャレット保持）、ダイアログだけ OOB で閉じる。
+	assertNavKeep(t, rec)
+}
+
+// ダイアログ表示中の保存（Ctrl+S）で、前提が消えた確認ダイアログが OOB で閉じられる。
+func TestSaveClearsOpenDialog(t *testing.T) {
+	st, id := dirtyTab("/d/a.md")
+	host := &fakeHost{}
+	h := NewHandler(st, host)
+	do(h, "POST", "/tabs/"+id+"/close") // 未保存確認ダイアログを開く
+	body := do(h, "POST", "/tabs/"+id+"/save").Body.String()
+	if host.written["/d/a.md"] != "edited!!!" {
+		t.Errorf("save should write while dialog is open: %+v", host.written)
+	}
+	if !strings.Contains(body, `<div id="dialog-host" hx-swap-oob="true"></div>`) {
+		t.Errorf("save response should OOB-clear the now-false dialog: %s", body)
+	}
+}
+
+// ダイアログ表示中に別経路で保存済み（clean）になったタブへの「保存して閉じる」は、
+// 再書き込みせずに閉じる（外部編集を古い内容で潰さない）。
+func TestCloseSaveSkipsWriteWhenAlreadyClean(t *testing.T) {
+	st, id := dirtyTab("/d/a.md")
+	host := &fakeHost{}
+	h := NewHandler(st, host)
+	do(h, "POST", "/tabs/"+id+"/close") // ダイアログ表示
+	do(h, "POST", "/tabs/"+id+"/save")  // 別経路の保存で clean 化
+	host.written["/d/a.md"] = "SENTINEL"
+	do(h, "POST", "/tabs/"+id+"/close?choice=save")
+	if host.written["/d/a.md"] != "SENTINEL" {
+		t.Errorf("clean tab must not be rewritten by close-save")
+	}
+	if len(st.TabVMs()) != 0 {
+		t.Errorf("close-save on clean tab should still close it")
 	}
 }
 
@@ -485,18 +555,8 @@ func TestSaveExistingPath(t *testing.T) {
 	if st.IsDirty(id) {
 		t.Errorf("tab should be clean after save")
 	}
-	// 上書き保存は本文を差し替えない（HX-Reswap: none ＋ タブバー/サイドバー OOB のみ）＝
-	// 閲覧のスクロール位置・編集キャレットを保つ。
-	if rec.Header().Get("HX-Reswap") != "none" {
-		t.Errorf("overwrite save should not reswap content")
-	}
-	body := rec.Body.String()
-	if strings.Contains(body, "preview-scroll") || strings.Contains(body, "editor-input") {
-		t.Errorf("overwrite save response should not contain content fragment: %s", body)
-	}
-	if !strings.Contains(body, `id="tabbar"`) || !strings.Contains(body, `id="sidebar"`) {
-		t.Errorf("overwrite save should OOB-update tabbar/sidebar: %s", body)
-	}
+	// 上書き保存は本文を差し替えない＝閲覧のスクロール位置・編集キャレットを保つ。
+	assertNavKeep(t, rec)
 }
 
 // メニュー「保存」はアクティブタブの dirty 状態に同期する（編集で有効化・保存で再び無効化）。
@@ -523,6 +583,36 @@ func TestSaveMenuSyncsWithDirty(t *testing.T) {
 	}
 }
 
+// 「閲覧/編集切替」メニューは読み取り専用タブで無効、通常タブに戻れば再び有効。
+func TestModeMenuDisabledForReadOnly(t *testing.T) {
+	st := NewState()
+	host := &fakeHost{readme: "# readme"}
+	h := NewHandler(st, host)
+	do(h, "POST", "/doc/about") // 読み取り専用タブがアクティブ → 無効を通知
+	if host.modeMenuEnabled {
+		t.Errorf("read-only tab should disable the mode toggle menu")
+	}
+	do(h, "POST", "/tabs/new") // 通常（無題）タブへ → 有効を通知
+	if !host.modeMenuEnabled {
+		t.Errorf("normal tab should re-enable the mode toggle menu")
+	}
+}
+
+// 無題タブは未編集でも「保存」有効（初回保存＝保存ダイアログに繋がる）。読み取り専用タブは無効。
+func TestSaveMenuEnabledForUntitledDisabledForReadOnly(t *testing.T) {
+	st := NewState()
+	host := &fakeHost{readme: "# readme"}
+	h := NewHandler(st, host)
+	do(h, "POST", "/tabs/new") // 無題（クリーン）がアクティブ
+	if !host.saveMenuEnabled {
+		t.Errorf("untitled tab should enable the save menu")
+	}
+	do(h, "POST", "/doc/about") // 読み取り専用タブがアクティブ
+	if host.saveMenuEnabled {
+		t.Errorf("read-only tab should disable the save menu")
+	}
+}
+
 // 未変更（dirty でない）タブへの「保存」はファイルへ書き込まない（完全 no-op）。
 // 外部エディタでの編集を、開いた時点の古い内容で上書きする事故を防ぐ。
 func TestSaveCleanTabDoesNotWrite(t *testing.T) {
@@ -533,9 +623,7 @@ func TestSaveCleanTabDoesNotWrite(t *testing.T) {
 	if len(host.written) != 0 {
 		t.Errorf("clean tab save must not write: %+v", host.written)
 	}
-	if rec.Header().Get("HX-Reswap") != "none" {
-		t.Errorf("clean tab save should keep the view untouched")
-	}
+	assertNavKeep(t, rec)
 }
 
 func TestSaveUntitledUsesDialog(t *testing.T) {
@@ -555,6 +643,23 @@ func TestSaveUntitledUsesDialog(t *testing.T) {
 	}
 }
 
+// 編集モード中の初回保存（無題→保存先決定）は本文を再描画しない＝キャレット・スクロールを
+// 保つ（BaseDir 変更の再描画が必要なのは閲覧モードのみ。タブ名はタブバー OOB が反映）。
+func TestSaveUntitledInSourceModeKeepsCaret(t *testing.T) {
+	st := NewState()
+	tab := st.AddTab("", "無題", "draft")
+	st.SetMode(tab.ID) // source
+	host := &fakeHost{savePath: "/chosen/note.md"}
+	rec := do(NewHandler(st, host), "POST", "/tabs/"+tab.ID+"/save")
+	if host.written["/chosen/note.md"] != "draft" {
+		t.Errorf("untitled save should write: %+v", host.written)
+	}
+	assertNavKeep(t, rec)
+	if !strings.Contains(rec.Body.String(), "note.md") {
+		t.Errorf("tabbar OOB should carry the new file name: %s", rec.Body.String())
+	}
+}
+
 func TestSaveUntitledCancel(t *testing.T) {
 	st := NewState()
 	tab := st.AddTab("", "無題", "draft")
@@ -563,9 +668,7 @@ func TestSaveUntitledCancel(t *testing.T) {
 	if len(host.written) != 0 {
 		t.Errorf("cancel should not write")
 	}
-	if rec.Header().Get("HX-Reswap") != "none" {
-		t.Errorf("cancelled save should keep the view untouched")
-	}
+	assertNavKeep(t, rec)
 }
 
 func TestOpenAboutAndLicense(t *testing.T) {
@@ -853,8 +956,41 @@ func TestEditContentUpdatesHighlight(t *testing.T) {
 	if _, _, c, _ := st.SaveInfo(tab.ID); c != "# H" {
 		t.Errorf("content not updated: %q", c)
 	}
-	if !strings.Contains(body, `id="hl-`+tab.ID) || !strings.Contains(body, "chroma") {
-		t.Errorf("highlight layer not returned: %s", body)
+	// 応答はハイライト層の「中身」（innerHTML 差し替え用）＋タブバー OOB のみ。
+	// <pre id="hl-…"> 要素自体は差し替えない（クライアント側で保持＝スクロール位置維持）。
+	if !strings.Contains(body, "# H") {
+		t.Errorf("highlighted content not returned: %s", body)
+	}
+	if strings.Contains(body, "<pre") {
+		t.Errorf("edit-sync must not replace the <pre> element itself: %s", body)
+	}
+	if !strings.Contains(body, `id="tabbar"`) {
+		t.Errorf("edit-sync should OOB-update the tabbar: %s", body)
+	}
+}
+
+// 編集オーバーレイの改行パディング（最下部の 1 行ズレ・先頭空行の欠落防止）:
+//   - ハイライト層は末尾に改行を 1 つ補う（<pre> は末尾改行を行として描画しないが、
+//     textarea は末尾改行の後にキャレット行を持つ。補わないと最下部で表示が 1 行ズレる）
+//   - <pre>/<textarea> の開始タグ直後には犠牲改行を置く（HTML パーサはこの位置の改行
+//     1 つを無視するため、先頭が空行の文書で行・値が欠けない）
+func TestEditorOverlayNewlinePadding(t *testing.T) {
+	st := NewState()
+	tab := st.AddTab("/d/a.md", "a.md", "\nA\n") // 先頭空行＋末尾改行
+	st.SetMode(tab.ID)
+	// テンプレート由来の犠牲改行はファイルの改行コード（CRLF チェックアウト）に依存するため、
+	// ブラウザの入力正規化（CRLF→LF）と同じ変換をかけてから検証する。
+	body := strings.ReplaceAll(do(newH(st), "POST", "/tabs/"+tab.ID+"/activate").Body.String(), "\r\n", "\n")
+	if !strings.Contains(body, "aria-hidden=\"true\">\n\nA\n\n</pre>") {
+		t.Errorf("highlight layer should carry sacrificial + trailing newline padding: %s", body)
+	}
+	if !strings.Contains(body, "delay:150ms\">\n\nA\n</textarea>") {
+		t.Errorf("textarea should carry a sacrificial leading newline: %s", body)
+	}
+	// 編集応答（innerHTML 差し替え）はパーサの改行除去を受けないため、犠牲改行なし＋末尾補いのみ。
+	body = do(newH(st), "POST", "/tabs/"+tab.ID+"/content?value=%0AB%0A").Body.String() // "\nB\n"
+	if !strings.HasPrefix(body, "\nB\n\n<div id=\"tabbar\"") {
+		t.Errorf("edit-sync should be padded highlight followed by tabbar OOB: %q", body)
 	}
 }
 

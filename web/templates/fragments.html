@@ -13,16 +13,20 @@
 
 {{/* 本文（閲覧）。CSS 変数は #styleblock（#content）から継承、配色/組版は markdown.css。
      data-scheme は glue.js の mermaid テーマ切替に使う（再描画ごとに最新が伝わる）。
-     Body は render が生成しサニタイズ済みの安全な HTML。 */}}
-{{define "content"}}{{if eq .Mode "source"}}<div class="editor" data-scheme="{{.Scheme}}"><pre class="chroma hl" id="hl-{{.TabID}}" aria-hidden="true">{{.Highlighted}}</pre><textarea class="editor-input" name="value" spellcheck="false" wrap="soft" hx-post="/tabs/{{.TabID}}/content" hx-target="#hl-{{.TabID}}" hx-swap="outerHTML" hx-trigger="input changed delay:150ms">{{.Raw}}</textarea></div>{{else}}<div class="preview-scroll" data-scheme="{{.Scheme}}"><div class="markdown-body">{{.Body}}</div></div>{{end}}{{end}}
+     Body は render が生成しサニタイズ済みの安全な HTML。
+     編集モードの <pre>/<textarea> 開始タグ直後の改行は「犠牲改行」: HTML パーサは
+     この位置の改行 1 つを無視するため、内容が改行で始まる文書でも先頭行が失われない
+     （textarea では値の欠落＝データ損失、<pre> では 1 行ズレの防止）。 */}}
+{{define "content"}}{{if eq .Mode "source"}}<div class="editor" data-scheme="{{.Scheme}}"><pre class="chroma hl" id="hl-{{.TabID}}" aria-hidden="true">
+{{.Highlighted}}</pre><textarea class="editor-input" name="value" spellcheck="false" wrap="soft" hx-post="/tabs/{{.TabID}}/content" hx-target="#hl-{{.TabID}}" hx-swap="innerHTML" hx-trigger="input changed delay:150ms">
+{{.Raw}}</textarea></div>{{else}}<div class="preview-scroll" data-scheme="{{.Scheme}}"><div class="markdown-body">{{.Body}}</div></div>{{end}}{{end}}
 
-{{/* 編集オーバーレイのハイライト層（入力ごとの再ハイライト応答）。 */}}
-{{define "hl"}}<pre class="chroma hl" id="hl-{{.TabID}}" aria-hidden="true">{{.Highlighted}}</pre>{{end}}
-
-{{/* 編集入力の応答: ハイライト層（#hl-{id} を outerHTML 置換）＋ タブバーを OOB 更新して
-     未保存マーク（•）を即時反映する。 */}}
-{{define "edit-sync"}}{{template "hl" .Content}}
-<div id="tabbar" hx-swap-oob="true">{{template "tabbar-inner" .}}</div>{{end}}
+{{/* 編集入力の応答: ハイライト層の「中身だけ」（#hl-{id} へ innerHTML）＋ タブバーの OOB 更新
+     （未保存マーク（•）の即時反映）。<pre> 要素自体は差し替えないため、スクロール位置は
+     原則ブラウザが保持する（行数が変わる編集で同期がクランプされた場合のみ、glue が
+     afterSwap で再同期する）。OOB 抽出後の残り＝ハイライト HTML が本文に
+     入るよう、両者の間に空白を挟まない（<pre> 内では空白が描画に影響するため）。 */}}
+{{define "edit-sync"}}{{.Content.Highlighted}}<div id="tabbar" hx-swap-oob="true">{{template "tabbar-inner" .}}</div>{{end}}
 
 {{/* アクティブスタイルの CSS 変数ブロック（フィールド編集のライブプレビュー応答）。 */}}
 {{define "styleblock"}}<style id="styleblock">#content{ {{.StyleVars}} }</style>{{end}}
@@ -38,11 +42,16 @@
      dict: Label Val Post。HEX は commit（change）時に POST。 */}}
 {{define "colorfield"}}<label class="field"><span>{{.Label}}</span><span class="field-pair" data-pair><input type="color" name="value" value="{{.Val}}" hx-post="{{.Post}}" hx-target="#styleblock" hx-swap="outerHTML" hx-trigger="input changed delay:80ms"><input type="text" class="field-hex" name="value" value="{{.Val}}" maxlength="7" spellcheck="false" hx-post="{{.Post}}" hx-target="#styleblock" hx-swap="outerHTML" hx-trigger="change"></span></label>{{end}}
 
+{{/* セレクトフィールド: ラベル＋プルダウン（value 送信・change で発火）。
+     dict: Label / Post / Target / Options（{Value,Label} 列。固定選択肢は opts 関数で生成）/
+     Selected（現在値）/ Swap（任意。#styleblock 系は "outerHTML"、#content 系は省略＝innerHTML 既定）。 */}}
+{{define "selectfield"}}<label class="field"><span>{{.Label}}</span><select name="value" hx-post="{{.Post}}" hx-target="{{.Target}}"{{if .Swap}} hx-swap="{{.Swap}}"{{end}} hx-trigger="change">{{$sel := .Selected}}{{range .Options}}<option value="{{.Value}}"{{if eq .Value $sel}} selected{{end}}>{{.Label}}</option>{{end}}</select></label>{{end}}
+
 {{/* 設定パネル（スタイル選択（プルダウン）・複製・編集フィールド・削除）。各フィールドは編集で
      #styleblock（CSS 変数）だけを差し替える＝本文再描画なしのライブプレビュー。
      インポート/エクスポートのボタンは置かず、メニュー「ファイル → スタイル」から行う。 */}}
 {{define "settings-inner"}}<div class="settings-section">
-  <label class="field"><span>スタイル</span><select name="value" hx-post="/settings/style" hx-target="#content" hx-trigger="change">{{range .Styles}}<option value="{{.ID}}"{{if .Active}} selected{{end}}>{{.Name}}</option>{{end}}</select></label>
+  {{template "selectfield" (dict "Label" "スタイル" "Post" "/settings/style" "Target" "#content" "Options" .Styles "Selected" .ActiveStyle.ID)}}
 </div>
 {{if not .ActiveEditable}}<div class="settings-section">
   <p class="settings-note">プリセットは直接編集できません。複製してから編集してください。</p>
@@ -53,20 +62,20 @@
 </div>
 <div class="settings-section">
   <div class="settings-heading">本文</div>
-  <label class="field"><span>フォント</span><select name="value" hx-post="/settings/field/fontFamily" hx-target="#styleblock" hx-swap="outerHTML" hx-trigger="change">{{range .FontOptions}}<option value="{{.Value}}"{{if eq $s.FontFamily .Value}} selected{{end}}>{{.Label}}</option>{{end}}</select></label>
+  {{template "selectfield" (dict "Label" "フォント" "Post" "/settings/field/fontFamily" "Target" "#styleblock" "Swap" "outerHTML" "Options" .FontOptions "Selected" $s.FontFamily)}}
   {{template "numfield" (dict "Label" "文字サイズ" "Min" 12 "Max" 28 "Step" 1 "Val" $s.FontSize "Post" "/settings/field/fontSize")}}
   {{template "numfield" (dict "Label" "行間" "Min" 1.2 "Max" 2.4 "Step" 0.05 "Val" $s.LineHeight "Post" "/settings/field/lineHeight")}}
   {{template "colorfield" (dict "Label" "文字色" "Val" $s.Color "Post" "/settings/field/color")}}
   {{template "colorfield" (dict "Label" "背景色" "Val" $s.Background "Post" "/settings/field/background")}}
   {{template "numfield" (dict "Label" "最大幅" "Min" 480 "Max" 1400 "Step" 20 "Val" $s.MaxWidth "Post" "/settings/field/maxWidth")}}
   <label class="field checkbox"><input type="checkbox" name="value" value="true"{{if $s.MaxWidthFull}} checked{{end}} hx-post="/settings/field/maxWidthFull" hx-target="#styleblock" hx-swap="outerHTML" hx-trigger="change"><span>ウィンドウ幅に追従</span></label>
-  <label class="field"><span>配色（コード/図）</span><select name="value" hx-post="/settings/field/colorScheme" hx-target="#content" hx-trigger="change"><option value="light"{{if eq $s.ColorScheme "light"}} selected{{end}}>ライト</option><option value="dark"{{if eq $s.ColorScheme "dark"}} selected{{end}}>ダーク</option></select></label>
+  {{template "selectfield" (dict "Label" "配色（コード/図）" "Post" "/settings/field/colorScheme" "Target" "#content" "Options" (opts "light" "ライト" "dark" "ダーク") "Selected" $s.ColorScheme)}}
 </div>
 <div class="settings-section">
   <div class="settings-heading">見出し</div>
   {{range $i, $h := $s.Headings}}<details class="heading-details">
     <summary>h{{inc $i}}</summary>
-    <label class="field"><span>フォント</span><select name="value" hx-post="/settings/heading/{{$i}}/fontFamily" hx-target="#styleblock" hx-swap="outerHTML" hx-trigger="change">{{range $.FontOptions}}<option value="{{.Value}}"{{if eq $h.FontFamily .Value}} selected{{end}}>{{.Label}}</option>{{end}}</select></label>
+    {{template "selectfield" (dict "Label" "フォント" "Post" (printf "/settings/heading/%d/fontFamily" $i) "Target" "#styleblock" "Swap" "outerHTML" "Options" $.FontOptions "Selected" $h.FontFamily)}}
     {{template "numfield" (dict "Label" "サイズ" "Min" 10 "Max" 48 "Step" 1 "Val" $h.FontSize "Post" (printf "/settings/heading/%d/fontSize" $i))}}
     {{template "numfield" (dict "Label" "太さ" "Min" 100 "Max" 900 "Step" 100 "Val" $h.FontWeight "Post" (printf "/settings/heading/%d/fontWeight" $i))}}
     {{template "colorfield" (dict "Label" "色" "Val" $h.Color "Post" (printf "/settings/heading/%d/color" $i))}}
@@ -78,14 +87,14 @@
 <div class="settings-section">
   <div class="settings-heading">リンク</div>
   {{template "colorfield" (dict "Label" "色" "Val" $s.LinkColor "Post" "/settings/field/linkColor")}}
-  <label class="field"><span>下線</span><select name="value" hx-post="/settings/field/linkUnderline" hx-target="#styleblock" hx-swap="outerHTML" hx-trigger="change"><option value="always"{{if eq $s.LinkUnderline "always"}} selected{{end}}>常に</option><option value="hover"{{if eq $s.LinkUnderline "hover"}} selected{{end}}>ホバー時</option><option value="none"{{if eq $s.LinkUnderline "none"}} selected{{end}}>なし</option></select></label>
+  {{template "selectfield" (dict "Label" "下線" "Post" "/settings/field/linkUnderline" "Target" "#styleblock" "Swap" "outerHTML" "Options" (opts "always" "常に" "hover" "ホバー時" "none" "なし") "Selected" $s.LinkUnderline)}}
 </div>
 <div class="settings-section">
   <div class="settings-heading">リスト</div>
   {{template "numfield" (dict "Label" "インデント" "Min" 0 "Max" 64 "Step" 2 "Val" $s.ListIndent "Post" "/settings/field/listIndent")}}
   {{template "colorfield" (dict "Label" "マーカー色" "Val" $s.MarkerColor "Post" "/settings/field/markerColor")}}
   {{template "numfield" (dict "Label" "マーカーサイズ" "Min" 0.5 "Max" 2 "Step" 0.1 "Val" $s.MarkerSize "Post" "/settings/field/markerSize")}}
-  <label class="field"><span>マーカー位置</span><select name="value" hx-post="/settings/field/markerPosition" hx-target="#styleblock" hx-swap="outerHTML" hx-trigger="change"><option value="outside"{{if eq $s.MarkerPosition "outside"}} selected{{end}}>外側</option><option value="inside"{{if eq $s.MarkerPosition "inside"}} selected{{end}}>内側</option></select></label>
+  {{template "selectfield" (dict "Label" "マーカー位置" "Post" "/settings/field/markerPosition" "Target" "#styleblock" "Swap" "outerHTML" "Options" (opts "outside" "外側" "inside" "内側") "Selected" $s.MarkerPosition)}}
 </div>
 <div class="settings-section">
   <div class="settings-heading">引用</div>
@@ -97,7 +106,7 @@
 </div>
 <div class="settings-section">
   <div class="settings-heading">コード</div>
-  <label class="field"><span>フォント</span><select name="value" hx-post="/settings/field/codeFontFamily" hx-target="#styleblock" hx-swap="outerHTML" hx-trigger="change">{{range .CodeFontOptions}}<option value="{{.Value}}"{{if eq $s.CodeFontFamily .Value}} selected{{end}}>{{.Label}}</option>{{end}}</select></label>
+  {{template "selectfield" (dict "Label" "フォント" "Post" "/settings/field/codeFontFamily" "Target" "#styleblock" "Swap" "outerHTML" "Options" .CodeFontOptions "Selected" $s.CodeFontFamily)}}
   {{template "colorfield" (dict "Label" "ブロック背景" "Val" $s.CodeBlockBg "Post" "/settings/field/codeBlockBg")}}
   {{template "numfield" (dict "Label" "文字サイズ" "Min" 10 "Max" 24 "Step" 1 "Val" $s.CodeFontSize "Post" "/settings/field/codeFontSize")}}
   {{template "colorfield" (dict "Label" "インライン背景" "Val" $s.CodeBg "Post" "/settings/field/codeBg")}}
@@ -205,14 +214,14 @@
 {{/* 閲覧本文の応答（#content へ）＋ ダイアログ host を OOB 更新。 */}}
 {{define "view"}}{{template "content" .Content}}{{template "dialog-host-oob" .}}{{end}}
 
-{{/* タブ操作（新規/閉じる/アクティブ切替）の応答: 本文＋タブバー OOB＋サイドバー OOB＋ダイアログ host OOB。 */}}
+{{/* タブ操作（新規/閉じる/アクティブ切替）の応答: 本文＋シェルの OOB 群（navkeep と共通）。 */}}
 {{define "nav"}}{{template "content" .Content}}
-<div id="tabbar" hx-swap-oob="true">{{template "tabbar-inner" .}}</div>
+{{template "navkeep" .}}{{end}}
+
+{{/* シェルの OOB 群: タブバー＋サイドバー＋ダイアログ host。本文が変わらない操作
+     （上書き保存・ダイアログのキャンセル等）は HX-Reswap: none と組み合わせて単体で使い、
+     閲覧のスクロール位置・編集キャレットを保つ。Dialog が nil なら表示中のダイアログは
+     閉じる（保存でダイアログの前提が消えた場合などに、虚偽の確認を残さない）。 */}}
+{{define "navkeep"}}<div id="tabbar" hx-swap-oob="true">{{template "tabbar-inner" .}}</div>
 <aside id="sidebar"{{if not .SidebarOpen}} hidden{{end}} hx-swap-oob="true">{{template "sidebar-inner" .}}</aside>
 {{template "dialog-host-oob" .}}{{end}}
-
-{{/* 本文が変わらない操作（上書き保存等）の応答: 本文は差し替えず（HX-Reswap: none）、
-     タブバー/サイドバーのみ OOB 更新する。閲覧のスクロール位置・編集キャレットを保ち、
-     表示中のダイアログにも触れない。 */}}
-{{define "navkeep"}}<div id="tabbar" hx-swap-oob="true">{{template "tabbar-inner" .}}</div>
-<aside id="sidebar"{{if not .SidebarOpen}} hidden{{end}} hx-swap-oob="true">{{template "sidebar-inner" .}}</aside>{{end}}

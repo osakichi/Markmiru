@@ -648,8 +648,11 @@ func (s *State) SaveInfo(id string) (filePath, fileName, content string, ok bool
 	return t.FilePath, t.FileName, t.Content, true
 }
 
-// MarkSaved は保存後のパス・名前を反映し、savedContent を現在値に更新する（dirty 解除）。
-func (s *State) MarkSaved(id, path string) bool {
+// MarkSaved は保存後のパス・名前を反映し、savedContent を「実際にファイルへ書き込んだ内容」
+// （saved）に更新する。書き込み I/O 中に編集が届き現在の Content が saved と異なる場合は
+// dirty のまま残す——現在値を保存済みとみなすと、書き込まれていない編集が clean 扱いになり
+// 再保存もできず終了確認も出ない（サイレント消失）ため。
+func (s *State) MarkSaved(id, path, saved string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	t := s.find(id)
@@ -658,8 +661,10 @@ func (s *State) MarkSaved(id, path string) bool {
 	}
 	t.FilePath = path
 	t.FileName = filepath.Base(path)
-	t.SavedContent = t.Content
-	t.Edited = false // 保存で clean に戻す
+	t.SavedContent = saved
+	if t.Content == saved {
+		t.Edited = false // 書き込んだ内容から変化していなければ clean に戻す
+	}
 	return true
 }
 
@@ -756,6 +761,23 @@ func (s *State) UpdateContent(id, content string) bool {
 		t.Edited = true // 一度編集したら、後で元に戻しても未保存扱いを維持する
 	}
 	return true
+}
+
+// MenuStates はネイティブメニューの有効条件を 1 回のロックでまとめて返す。
+//   - canEdit: アクティブタブが編集モード（手組み編集メニューの編集専用項目用）
+//   - canSave: アクティブタブが dirty、または保存先未定の無題（「保存」メニュー用。
+//     無題は初回保存＝保存ダイアログに繋がるため、未編集でも保存可能とする）
+//   - canToggle: 閲覧/編集を切り替えられるか（「表示 → 閲覧/編集切替」メニュー用）
+//
+// 読み取り専用タブ（About/ライセンス。FilePath は空）とタブ無しはすべて無効。
+func (s *State) MenuStates() (canEdit, canSave, canToggle bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t := s.find(s.activeID)
+	if t == nil || t.ReadOnly {
+		return false, false, false
+	}
+	return t.Mode == "source", t.dirty() || t.FilePath == "", true
 }
 
 // ActiveMeta はアクティブタブのモードと読み取り専用フラグを返す。

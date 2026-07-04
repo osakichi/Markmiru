@@ -28,9 +28,14 @@ const appTitle = "Markmiru"
 // SetEditMenuEnabled から参照できるよう保持する。macOS はネイティブ編集メニューのため未使用。
 var editOnlyMenuItems []*menu.MenuItem
 
-// saveMenuItem はメニュー「ファイル → 保存」。アクティブタブが dirty のときだけ有効にするため
-// SetSaveMenuEnabled から参照できるよう保持する（ファイルメニューは全 OS 手組み＝全 OS 対象）。
+// saveMenuItem はメニュー「ファイル → 保存」。アクティブタブが dirty または無題のときだけ
+// 有効にするため SetSaveMenuEnabled から参照できるよう保持する（全 OS 手組み＝全 OS 対象）。
 var saveMenuItem *menu.MenuItem
+
+// modeMenuItem はメニュー「表示 → 閲覧/編集切替」。読み取り専用タブでは無効にするため
+// SetModeMenuEnabled から参照できるよう保持する。既定は有効（起動時のアクティブは通常タブか
+// 無題＝切替可。web.Server の変化検出の基準値と一致させてある）。
+var modeMenuItem *menu.MenuItem
 
 // buildMenu はネイティブメニューを構築する。
 // クリック/ショートカットは runtime イベント（menu:*）を発火し、glue.js が htmx で対応する
@@ -48,8 +53,9 @@ func buildMenu(app *App) *menu.Menu {
 	fileMenu.AddText("新規", keys.CmdOrCtrl("n"), func(_ *menu.CallbackData) { app.emit("menu:new") })
 	fileMenu.AddText("開く", keys.CmdOrCtrl("o"), func(_ *menu.CallbackData) { app.emit("menu:open") })
 	saveMenuItem = fileMenu.AddText("保存", keys.CmdOrCtrl("s"), func(_ *menu.CallbackData) { app.emit("menu:save") })
-	// 起動直後は無効から始める（セッション復元・新規タブとも dirty でないため）。
-	// 以後はサーバが dirty 状態の変化に応じて SetSaveMenuEnabled で切り替える。
+	// 起動直後は無効から始める（セッション復元は常に閲覧・クリーンのため）。以後はサーバが
+	// 状態変化に応じて SetSaveMenuEnabled で切り替える（dirty または無題のとき有効）。
+	// この初期値は web.Server の変化検出の基準値（ゼロ値＝無効）と一致させてある。
 	saveMenuItem.Disabled = true
 	fileMenu.AddText("名前を付けて保存", keys.Combo("s", keys.CmdOrCtrlKey, keys.ShiftKey), func(_ *menu.CallbackData) { app.emit("menu:saveAs") })
 	fileMenu.AddSeparator()
@@ -108,7 +114,7 @@ func buildMenu(app *App) *menu.Menu {
 	}
 
 	viewMenu := appMenu.AddSubmenu("表示")
-	viewMenu.AddText("閲覧/編集切替", keys.CmdOrCtrl("e"), func(_ *menu.CallbackData) { app.emit("menu:toggleMode") })
+	modeMenuItem = viewMenu.AddText("閲覧/編集切替", keys.CmdOrCtrl("e"), func(_ *menu.CallbackData) { app.emit("menu:toggleMode") })
 	viewMenu.AddText("サイドバー", keys.CmdOrCtrl("b"), func(_ *menu.CallbackData) { app.emit("menu:toggleSidebar") })
 
 	helpMenu := appMenu.AddSubmenu("ヘルプ")
@@ -148,8 +154,9 @@ func (h webHost) LicenseMarkdown() string { return h.app.ReadLicense() }
 func (h webHost) ExportStyleDialog(name string) (string, error) { return h.app.ExportStyleDialog(name) }
 func (h webHost) ImportStyleDialog() (string, error)            { return h.app.ImportStyleDialog() }
 
-func (h webHost) SetEditMenuEnabled(canEdit bool) { h.app.SetEditMenuEnabled(canEdit) }
-func (h webHost) SetSaveMenuEnabled(canSave bool) { h.app.SetSaveMenuEnabled(canSave) }
+func (h webHost) SetEditMenuEnabled(canEdit bool)   { h.app.SetEditMenuEnabled(canEdit) }
+func (h webHost) SetSaveMenuEnabled(canSave bool)   { h.app.SetSaveMenuEnabled(canSave) }
+func (h webHost) SetModeMenuEnabled(canToggle bool) { h.app.SetModeMenuEnabled(canToggle) }
 func (h webHost) Quit()                           { h.app.Quit() }
 
 func (h webHost) OpenURL(url string) { h.app.OpenExternalURL(url) }
