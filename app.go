@@ -93,6 +93,18 @@ func (a *App) SetEditMenuEnabled(canEdit bool) {
 	runtime.MenuUpdateApplicationMenu(a.ctx)
 }
 
+// SetSaveMenuEnabled はメニュー「ファイル → 保存」の有効・無効を切り替える。
+// アクティブタブが dirty（未保存の変更あり）のときだけ有効にする（未変更タブへの保存は
+// サーバ側でも no-op のため、入口のメニューを塞いで操作不能を明示する）。ファイルメニューは
+// 全 OS 手組みのため macOS も対象。サーバ（web の syncSaveMenu）が変化時に呼ぶ。
+func (a *App) SetSaveMenuEnabled(canSave bool) {
+	if a.ctx == nil || saveMenuItem == nil {
+		return
+	}
+	saveMenuItem.Disabled = !canSave
+	runtime.MenuUpdateApplicationMenu(a.ctx)
+}
+
 // OpenExternalURL は URL を OS の既定ブラウザ／メーラで開く（プレビュー内の外部リンク用）。
 // WebView 自体を外部 URL へ遷移させないための委譲先。呼び出し側でスキームを検証済みとする。
 func (a *App) OpenExternalURL(url string) {

@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 
 	"Markmiru/render"
 	"Markmiru/style"
@@ -161,6 +162,11 @@ type Host interface {
 	// macOS はネイティブ編集メニューが文脈で自動制御するため no-op。
 	// サーバがモードを保持するため、フロント通知ではなくサーバ主導で本文描画のたびに同期する。
 	SetEditMenuEnabled(canEdit bool)
+	// SetSaveMenuEnabled はメニュー「ファイル → 保存」の有効・無効を切り替える。アクティブタブが
+	// dirty（未保存の変更あり）のとき canSave=true。未変更タブへの保存はサーバ側でも no-op だが、
+	// 入口のメニュー自体を非活性にして操作できないことを示す。ファイルメニューは全 OS 手組みのため
+	// macOS でも有効。サーバ主導で各リクエスト処理後に dirty 状態の変化時だけ呼ばれる。
+	SetSaveMenuEnabled(canSave bool)
 	// Quit はアプリを終了する（終了ループで未保存タブをすべて処理し終えた後に呼ぶ）。
 	Quit()
 	// ReadFile は指定パスを読み込み、ファイル名と内容を返す（不在ファイルの「再試行」用）。
@@ -174,6 +180,12 @@ type Host interface {
 type Server struct {
 	state *State
 	host  Host
+
+	// 「保存」メニューへ最後に通知した有効/無効（syncSaveMenu の変化検出用。
+	// 編集入力のたびに同期が走るため、変化したときだけ Host へ伝える）。
+	saveMenuMu    sync.Mutex
+	saveMenuKnown bool
+	saveMenuOn    bool
 }
 
 // NewHandler は Go-SSR の http.Handler を返す。
@@ -217,7 +229,7 @@ func NewHandler(state *State, host Host) http.Handler {
 	mux.HandleFunc("POST /doc/about", s.serveAbout)
 	mux.HandleFunc("POST /doc/license", s.serveLicense)
 	mux.HandleFunc("POST /settings/toggle", s.serveSettingsToggle)
-	mux.HandleFunc("POST /settings/style/{id}", s.serveSetStyle)
+	mux.HandleFunc("POST /settings/style", s.serveSetStyle)
 	mux.HandleFunc("POST /settings/duplicate", s.serveDuplicateStyle)
 	mux.HandleFunc("POST /settings/field/{key}", s.serveField)
 	mux.HandleFunc("POST /settings/heading/{n}/{key}", s.serveHeadingField)
@@ -225,7 +237,35 @@ func NewHandler(state *State, host Host) http.Handler {
 	mux.HandleFunc("POST /settings/delete", s.serveDeleteStyle)
 	mux.HandleFunc("POST /settings/export", s.serveExportStyle)
 	mux.HandleFunc("POST /settings/import", s.serveImportStyle)
-	return withCSP(mux)
+	return withCSP(s.withSaveMenuSync(mux))
+}
+
+// withSaveMenuSync は各リクエストの処理後に「保存」メニューの有効/無効をアクティブタブの
+// dirty 状態へ同期するミドルウェア。dirty を変え得る操作（編集・保存・タブ切替/開閉・終了ループ等）
+// をすべてリクエスト後の一点で拾う。実際の Host 通知は変化時のみ（syncSaveMenu）。
+func (s *Server) withSaveMenuSync(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r)
+		s.syncSaveMenu()
+	})
+}
+
+// syncSaveMenu はメニュー「ファイル → 保存」の有効/無効をアクティブタブの dirty 状態に同期する
+// （dirty のときだけ有効。未変更タブへの保存は no-op のため入口から塞ぐ＝§5.2）。
+// 編集入力（150ms デバウンス）のたびに呼ばれるため、前回通知した値から変化したときだけ
+// Host へ伝え、ネイティブメニューの不要な再構築を避ける。
+func (s *Server) syncSaveMenu() {
+	if s.host == nil {
+		return
+	}
+	on := s.state.IsDirty(s.state.ActiveID())
+	s.saveMenuMu.Lock()
+	changed := !s.saveMenuKnown || s.saveMenuOn != on
+	s.saveMenuKnown, s.saveMenuOn = true, on
+	s.saveMenuMu.Unlock()
+	if changed {
+		s.host.SetSaveMenuEnabled(on)
+	}
 }
 
 // cspPolicy は WebView に適用する Content-Security-Policy。
@@ -622,6 +662,16 @@ func (s *Server) serveNav(w http.ResponseWriter) {
 	_ = shellTmpl.ExecuteTemplate(w, "nav", s.navVM())
 }
 
+// serveNavKeep は本文（#content）を差し替えず、タブバー/サイドバーだけを OOB 更新する
+// （HX-Reswap: none。htmx は本文スワップを行わず OOB のみ処理する）。上書き保存のように
+// 表示内容が変わらない操作で、閲覧のスクロール位置や編集キャレットを保つために使う。
+func (s *Server) serveNavKeep(w http.ResponseWriter) {
+	vm := shellVM{Tabs: s.state.TabVMs(), SidebarOpen: s.state.SidebarOpen()}
+	w.Header().Set("HX-Reswap", "none")
+	htmlHeader(w)
+	_ = shellTmpl.ExecuteTemplate(w, "navkeep", vm)
+}
+
 // serveOpen は OS のファイル選択を開き、選択ファイルをタブで開く（最後をアクティブ）。
 func (s *Server) serveOpen(w http.ResponseWriter, _ *http.Request) {
 	if s.host != nil {
@@ -705,14 +755,22 @@ func (s *Server) save(w http.ResponseWriter, r *http.Request, id string, forceDi
 		http.NotFound(w, r)
 		return
 	}
+	// 未変更（dirty でない）タブへの「保存」は書き込まない（完全 no-op）。外部変更監視が
+	// 無いため、他エディタでの編集を開いた時点の古い内容で上書きする事故をここで防ぐ。
+	// 「名前を付けて保存」（forceDialog）と無題（path==""）の初回保存は対象外。
+	if !forceDialog && path != "" && !s.state.IsDirty(id) {
+		s.serveNavKeep(w)
+		return
+	}
+	prevPath := path
 	if forceDialog || path == "" {
 		if s.host == nil {
-			s.serveNav(w)
+			s.serveNavKeep(w)
 			return
 		}
 		chosen, err := s.host.SaveFileDialog(suggestName(fileName))
-		if err != nil || chosen == "" { // キャンセル
-			s.serveNav(w)
+		if err != nil || chosen == "" { // キャンセル: 表示は何も変えない
+			s.serveNavKeep(w)
 			return
 		}
 		path = chosen
@@ -722,7 +780,14 @@ func (s *Server) save(w http.ResponseWriter, r *http.Request, id string, forceDi
 			s.state.MarkSaved(id, path)
 		}
 	}
-	s.serveNav(w)
+	if path != prevPath {
+		// 保存先が決まった/変わった（無題の初回保存・名前を付けて保存）: 閲覧の画像解決の
+		// 基点（BaseDir）が変わるため本文を再描画する。
+		s.serveNav(w)
+		return
+	}
+	// 上書き保存: 表示内容は変わらないため本文を差し替えず、スクロール位置・キャレットを保つ。
+	s.serveNavKeep(w)
 }
 
 // serveAbout は同梱 README を読み取り専用タブ（About 代わり）で開く。
@@ -750,7 +815,7 @@ func (s *Server) serveSettingsToggle(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) serveSetStyle(w http.ResponseWriter, r *http.Request) {
-	if !s.state.SetActiveStyle(r.PathValue("id")) {
+	if !s.state.SetActiveStyle(r.FormValue("value")) {
 		http.NotFound(w, r)
 		return
 	}

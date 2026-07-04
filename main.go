@@ -28,6 +28,10 @@ const appTitle = "Markmiru"
 // SetEditMenuEnabled から参照できるよう保持する。macOS はネイティブ編集メニューのため未使用。
 var editOnlyMenuItems []*menu.MenuItem
 
+// saveMenuItem はメニュー「ファイル → 保存」。アクティブタブが dirty のときだけ有効にするため
+// SetSaveMenuEnabled から参照できるよう保持する（ファイルメニューは全 OS 手組み＝全 OS 対象）。
+var saveMenuItem *menu.MenuItem
+
 // buildMenu はネイティブメニューを構築する。
 // クリック/ショートカットは runtime イベント（menu:*）を発火し、glue.js が htmx で対応する
 // Go-SSR エンドポイントを叩く。設計: docs/アーキテクチャ・画面設計.md §9
@@ -43,7 +47,10 @@ func buildMenu(app *App) *menu.Menu {
 	fileMenu := appMenu.AddSubmenu("ファイル")
 	fileMenu.AddText("新規", keys.CmdOrCtrl("n"), func(_ *menu.CallbackData) { app.emit("menu:new") })
 	fileMenu.AddText("開く", keys.CmdOrCtrl("o"), func(_ *menu.CallbackData) { app.emit("menu:open") })
-	fileMenu.AddText("保存", keys.CmdOrCtrl("s"), func(_ *menu.CallbackData) { app.emit("menu:save") })
+	saveMenuItem = fileMenu.AddText("保存", keys.CmdOrCtrl("s"), func(_ *menu.CallbackData) { app.emit("menu:save") })
+	// 起動直後は無効から始める（セッション復元・新規タブとも dirty でないため）。
+	// 以後はサーバが dirty 状態の変化に応じて SetSaveMenuEnabled で切り替える。
+	saveMenuItem.Disabled = true
 	fileMenu.AddText("名前を付けて保存", keys.Combo("s", keys.CmdOrCtrlKey, keys.ShiftKey), func(_ *menu.CallbackData) { app.emit("menu:saveAs") })
 	fileMenu.AddSeparator()
 	fileMenu.AddText("PDF 出力 / 印刷", keys.CmdOrCtrl("p"), func(_ *menu.CallbackData) { app.emit("menu:print") })
@@ -51,6 +58,12 @@ func buildMenu(app *App) *menu.Menu {
 	styleMenu := fileMenu.AddSubmenu("スタイル")
 	styleMenu.AddText("インポート...", nil, func(_ *menu.CallbackData) { app.emit("menu:style-import") })
 	styleMenu.AddText("エクスポート...", nil, func(_ *menu.CallbackData) { app.emit("menu:style-export") })
+	// 設定はファイル直下に置く（Windows の「ファイル > オプション」慣習。全 OS 同一実装）。
+	// macOS 本来の定位置（アプリメニューの Settings…）は menu.AppMenu() がネイティブ固定で
+	// 追加不可、Linux 慣習の「編集 > 設定」も macOS の menu.EditMenu() が固定のため OS 間で
+	// 場所が割れる。将来スタイル以外の設定が増える想定のため「スタイル」配下にも入れない。
+	fileMenu.AddSeparator()
+	fileMenu.AddText("設定...", keys.CmdOrCtrl(","), func(_ *menu.CallbackData) { app.emit("menu:settings") })
 	// macOS は標準アプリメニューが「終了（Cmd+Q）」を提供するため、ファイルメニューには置かない
 	// （Cmd+Q の二重割り当てを避ける）。Windows / Linux ではここで提供する。
 	if !isMacOS {
@@ -136,6 +149,7 @@ func (h webHost) ExportStyleDialog(name string) (string, error) { return h.app.E
 func (h webHost) ImportStyleDialog() (string, error)            { return h.app.ImportStyleDialog() }
 
 func (h webHost) SetEditMenuEnabled(canEdit bool) { h.app.SetEditMenuEnabled(canEdit) }
+func (h webHost) SetSaveMenuEnabled(canSave bool) { h.app.SetSaveMenuEnabled(canSave) }
 func (h webHost) Quit()                           { h.app.Quit() }
 
 func (h webHost) OpenURL(url string) { h.app.OpenExternalURL(url) }

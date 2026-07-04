@@ -153,21 +153,27 @@
   }
 
   // --- 2. 編集オーバーレイ: スクロール同期 --------------------------------
+  function syncEditorScroll() {
+    var ta = document.querySelector('.editor-input')
+    var hl = ta && ta.parentElement && ta.parentElement.querySelector('.hl')
+    if (hl) {
+      hl.scrollTop = ta.scrollTop
+      hl.scrollLeft = ta.scrollLeft
+    }
+  }
   // textarea のスクロールをハイライト層（.hl）へ反映（scroll はバブルしないので capture）。
   document.addEventListener(
     'scroll',
     function (e) {
-      var ta = e.target
-      if (ta && ta.classList && ta.classList.contains('editor-input')) {
-        var hl = ta.parentElement && ta.parentElement.querySelector('.hl')
-        if (hl) {
-          hl.scrollTop = ta.scrollTop
-          hl.scrollLeft = ta.scrollLeft
-        }
-      }
+      var t = e.target
+      if (t && t.classList && t.classList.contains('editor-input')) syncEditorScroll()
     },
     true
   )
+  // 入力のたびにハイライト層は outerHTML で差し替えられ scrollTop/scrollLeft が 0 に戻る一方、
+  // textarea 側のスクロールは保たれる。再同期しないと表示だけが文書先頭へ飛び、以後キャレットの
+  // 見かけ位置と実位置がズレる。afterSwap（差し替え直後・描画前）で textarea の位置を再適用する。
+  document.body.addEventListener('htmx:afterSwap', syncEditorScroll)
 
   // --- 3. ネイティブメニュー / IPC → htmx ブリッジ ------------------------
   // メニュークリック/アクセラレータ（Ctrl+S 等）は Go が menu:* を発火する。
@@ -225,6 +231,7 @@
     R.EventsOn('menu:toggleSidebar', function () { ajax('POST', '/sidebar/toggle', '#sidebar', 'outerHTML') })
     R.EventsOn('menu:about', function () { ajax('POST', '/doc/about', '#content') })
     R.EventsOn('menu:license', function () { ajax('POST', '/doc/license', '#content') })
+    R.EventsOn('menu:settings', function () { ajax('POST', '/settings/toggle', '#settings', 'outerHTML') })
     R.EventsOn('menu:style-import', function () { ajax('POST', '/settings/import', '#content') })
     R.EventsOn('menu:style-export', function () { ajax('POST', '/settings/export', '#settings', 'outerHTML') })
     ;['undo', 'redo', 'cut', 'copy', 'paste', 'selectAll'].forEach(function (cmd) {

@@ -31,6 +31,7 @@ type fakeHost struct {
 	exportPath      string
 	importContent   string
 	editMenuEnabled bool              // SetEditMenuEnabled の最後の値
+	saveMenuEnabled bool              // SetSaveMenuEnabled の最後の値
 	quitCalled      bool              // Quit が呼ばれたか
 	readFiles       map[string]string // ReadFile が返す内容（path→content）。無ければ ok=false
 	openedURL       string            // OpenURL に渡された最後の URL
@@ -50,6 +51,7 @@ func (h *fakeHost) LicenseMarkdown() string                  { return h.license 
 func (h *fakeHost) ExportStyleDialog(string) (string, error) { return h.exportPath, nil }
 func (h *fakeHost) ImportStyleDialog() (string, error)       { return h.importContent, nil }
 func (h *fakeHost) SetEditMenuEnabled(canEdit bool)          { h.editMenuEnabled = canEdit }
+func (h *fakeHost) SetSaveMenuEnabled(canSave bool)          { h.saveMenuEnabled = canSave }
 func (h *fakeHost) Quit()                                    { h.quitCalled = true }
 func (h *fakeHost) ReadFile(path string) (string, string, bool) {
 	content, ok := h.readFiles[path]
@@ -474,12 +476,65 @@ func TestOpenPathMissingIgnored(t *testing.T) {
 }
 
 func TestSaveExistingPath(t *testing.T) {
-	st := NewState()
-	tab := st.AddTab("/docs/a.md", "a.md", "hello")
+	st, id := dirtyTab("/docs/a.md")
 	host := &fakeHost{}
-	do(NewHandler(st, host), "POST", "/tabs/"+tab.ID+"/save")
-	if host.written["/docs/a.md"] != "hello" {
+	rec := do(NewHandler(st, host), "POST", "/tabs/"+id+"/save")
+	if host.written["/docs/a.md"] != "edited!!!" {
 		t.Errorf("content not written to existing path: %+v", host.written)
+	}
+	if st.IsDirty(id) {
+		t.Errorf("tab should be clean after save")
+	}
+	// 上書き保存は本文を差し替えない（HX-Reswap: none ＋ タブバー/サイドバー OOB のみ）＝
+	// 閲覧のスクロール位置・編集キャレットを保つ。
+	if rec.Header().Get("HX-Reswap") != "none" {
+		t.Errorf("overwrite save should not reswap content")
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, "preview-scroll") || strings.Contains(body, "editor-input") {
+		t.Errorf("overwrite save response should not contain content fragment: %s", body)
+	}
+	if !strings.Contains(body, `id="tabbar"`) || !strings.Contains(body, `id="sidebar"`) {
+		t.Errorf("overwrite save should OOB-update tabbar/sidebar: %s", body)
+	}
+}
+
+// メニュー「保存」はアクティブタブの dirty 状態に同期する（編集で有効化・保存で再び無効化）。
+func TestSaveMenuSyncsWithDirty(t *testing.T) {
+	st := NewState()
+	host := &fakeHost{}
+	h := NewHandler(st, host)
+	tab := st.AddTab("/d/a.md", "a.md", "A")
+	st.SetMode(tab.ID)
+	// 未編集のうちは無効。
+	do(h, "GET", "/")
+	if host.saveMenuEnabled {
+		t.Errorf("save menu should be disabled while clean")
+	}
+	// 編集で dirty → 有効。
+	do(h, "POST", "/tabs/"+tab.ID+"/content?value=A!")
+	if !host.saveMenuEnabled {
+		t.Errorf("save menu should be enabled when dirty")
+	}
+	// 保存で clean → 再び無効。
+	do(h, "POST", "/tabs/"+tab.ID+"/save")
+	if host.saveMenuEnabled {
+		t.Errorf("save menu should be disabled again after save")
+	}
+}
+
+// 未変更（dirty でない）タブへの「保存」はファイルへ書き込まない（完全 no-op）。
+// 外部エディタでの編集を、開いた時点の古い内容で上書きする事故を防ぐ。
+func TestSaveCleanTabDoesNotWrite(t *testing.T) {
+	st := NewState()
+	tab := st.AddTab("/docs/a.md", "a.md", "hello") // 未編集
+	host := &fakeHost{}
+	rec := do(NewHandler(st, host), "POST", "/tabs/"+tab.ID+"/save")
+	if len(host.written) != 0 {
+		t.Errorf("clean tab save must not write: %+v", host.written)
+	}
+	if rec.Header().Get("HX-Reswap") != "none" {
+		t.Errorf("clean tab save should keep the view untouched")
 	}
 }
 
@@ -487,12 +542,16 @@ func TestSaveUntitledUsesDialog(t *testing.T) {
 	st := NewState()
 	tab := st.AddTab("", "無題", "draft")
 	host := &fakeHost{savePath: "/chosen/note.md"}
-	do(NewHandler(st, host), "POST", "/tabs/"+tab.ID+"/save")
+	rec := do(NewHandler(st, host), "POST", "/tabs/"+tab.ID+"/save")
 	if host.written["/chosen/note.md"] != "draft" {
 		t.Errorf("untitled save should write to dialog path: %+v", host.written)
 	}
 	if p, n, _, _ := st.SaveInfo(tab.ID); p != "/chosen/note.md" || n != "note.md" {
 		t.Errorf("tab not updated after save-as: path=%q name=%q", p, n)
+	}
+	// 保存先が決まった＝BaseDir が変わるため、こちらは本文を再描画する（通常の nav）。
+	if rec.Header().Get("HX-Reswap") != "" {
+		t.Errorf("first save of untitled should rerender content")
 	}
 }
 
@@ -500,9 +559,12 @@ func TestSaveUntitledCancel(t *testing.T) {
 	st := NewState()
 	tab := st.AddTab("", "無題", "draft")
 	host := &fakeHost{savePath: ""} // キャンセル
-	do(NewHandler(st, host), "POST", "/tabs/"+tab.ID+"/save")
+	rec := do(NewHandler(st, host), "POST", "/tabs/"+tab.ID+"/save")
 	if len(host.written) != 0 {
 		t.Errorf("cancel should not write")
+	}
+	if rec.Header().Get("HX-Reswap") != "none" {
+		t.Errorf("cancelled save should keep the view untouched")
 	}
 }
 
@@ -537,8 +599,11 @@ func TestSettingsToggleAndStyleList(t *testing.T) {
 	if !strings.Contains(shell, `id="settings" hidden`) {
 		t.Errorf("settings drawer should be hidden by default")
 	}
-	if !strings.Contains(shell, "ライト (プリセット)") || !strings.Contains(shell, `hx-post="/settings/style/dark"`) {
+	if !strings.Contains(shell, "ライト (プリセット)") || !strings.Contains(shell, `<option value="dark"`) {
 		t.Errorf("style selector missing presets: %s", shell)
+	}
+	if !strings.Contains(shell, `hx-post="/settings/style"`) {
+		t.Errorf("style pulldown should post to /settings/style: %s", shell)
 	}
 	// トグルで開く。
 	body := do(newH(st), "POST", "/settings/toggle").Body.String()
@@ -576,7 +641,7 @@ func TestSettingsNumericAndHexInputs(t *testing.T) {
 
 func TestSetStyleSwitchesActive(t *testing.T) {
 	st := testState()
-	body := do(newH(st), "POST", "/settings/style/dark").Body.String()
+	body := do(newH(st), "POST", "/settings/style?value=dark").Body.String()
 	if st.ActiveStyle().ID != "dark" {
 		t.Errorf("active style should be dark")
 	}
@@ -851,11 +916,10 @@ func TestReadOnlyTabNoModeToggle(t *testing.T) {
 }
 
 func TestActiveSave(t *testing.T) {
-	st := NewState()
-	st.AddTab("/d/a.md", "a.md", "hello")
+	st, _ := dirtyTab("/d/a.md")
 	host := &fakeHost{}
 	do(NewHandler(st, host), "POST", "/active/save")
-	if host.written["/d/a.md"] != "hello" {
+	if host.written["/d/a.md"] != "edited!!!" {
 		t.Errorf("active save should write active tab: %+v", host.written)
 	}
 }

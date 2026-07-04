@@ -1,5 +1,6 @@
-{{/* タブバー中身: サイドバートグル＋タブ一覧＋新規ボタン。 */}}
-{{define "tabbar-inner"}}<button type="button" class="tb-btn" hx-post="/sidebar/toggle" hx-target="#sidebar" hx-swap="outerHTML" title="サイドバー">☰</button><button type="button" class="tb-btn" hx-post="/tabs/open" hx-target="#content" title="開く">開く</button>{{template "tabs" .}}<button type="button" class="tb-btn" hx-post="/tabs/new" hx-target="#content" title="新規">＋</button><span class="tb-right">{{if and .ActiveID (not .ActiveReadOnly)}}<button type="button" class="tb-btn" hx-post="/tabs/{{.ActiveID}}/mode" hx-target="#content" title="閲覧/編集">{{if eq .ActiveMode "source"}}閲覧{{else}}編集{{end}}</button><button type="button" class="tb-btn" hx-post="/tabs/{{.ActiveID}}/save" hx-target="#content" title="保存">保存</button>{{end}}<button type="button" class="tb-btn" hx-post="/settings/toggle" hx-target="#settings" hx-swap="outerHTML" title="設定">設定</button><button type="button" class="tb-btn" hx-post="/doc/about" hx-target="#content" title="Markmiru について">About</button><button type="button" class="tb-btn" hx-post="/doc/license" hx-target="#content" title="ライセンス">ライセンス</button></span>{{end}}
+{{/* タブバー中身: サイドバートグル＋タブ一覧＋新規ボタン。機能ボタン（開く/モード切替/保存/設定/About/ライセンス）は
+     置かず、すべてネイティブメニューから呼び出す。 */}}
+{{define "tabbar-inner"}}<button type="button" class="tb-btn" hx-post="/sidebar/toggle" hx-target="#sidebar" hx-swap="outerHTML" title="サイドバー">☰</button>{{template "tabs" .}}<button type="button" class="tb-btn" hx-post="/tabs/new" hx-target="#content" title="新規">＋</button>{{end}}
 
 {{/* タブ一覧。各タブは「名前（クリックでアクティブ）」＋「×（閉じる）」。 */}}
 {{define "tabs"}}{{range .Tabs}}<span class="tab{{if .Active}} active{{end}}"><button type="button" class="tab-name" hx-post="/tabs/{{.ID}}/activate" hx-target="#content" title="{{.FileName}}">{{.FileName}}{{if .Dirty}} •{{end}}</button><button type="button" class="tab-close" hx-post="/tabs/{{.ID}}/close" hx-target="#content" title="閉じる">×</button></span>{{end}}{{end}}
@@ -37,12 +38,11 @@
      dict: Label Val Post。HEX は commit（change）時に POST。 */}}
 {{define "colorfield"}}<label class="field"><span>{{.Label}}</span><span class="field-pair" data-pair><input type="color" name="value" value="{{.Val}}" hx-post="{{.Post}}" hx-target="#styleblock" hx-swap="outerHTML" hx-trigger="input changed delay:80ms"><input type="text" class="field-hex" name="value" value="{{.Val}}" maxlength="7" spellcheck="false" hx-post="{{.Post}}" hx-target="#styleblock" hx-swap="outerHTML" hx-trigger="change"></span></label>{{end}}
 
-{{/* 設定パネル（スタイル選択・複製・編集フィールド）。各フィールドは編集で
-     #styleblock（CSS 変数）だけを差し替える＝本文再描画なしのライブプレビュー。 */}}
+{{/* 設定パネル（スタイル選択（プルダウン）・複製・編集フィールド・削除）。各フィールドは編集で
+     #styleblock（CSS 変数）だけを差し替える＝本文再描画なしのライブプレビュー。
+     インポート/エクスポートのボタンは置かず、メニュー「ファイル → スタイル」から行う。 */}}
 {{define "settings-inner"}}<div class="settings-section">
-  <div class="settings-label">スタイル</div>
-  <ul class="style-list">{{range .Styles}}<li><button type="button" class="style-opt{{if .Active}} active{{end}}" hx-post="/settings/style/{{.ID}}" hx-target="#content">{{.Name}}</button></li>{{end}}</ul>
-  <button type="button" class="mm-btn" hx-post="/settings/import" hx-target="#content" title="スタイルをインポート">インポート</button>
+  <label class="field"><span>スタイル</span><select name="value" hx-post="/settings/style" hx-target="#content" hx-trigger="change">{{range .Styles}}<option value="{{.ID}}"{{if .Active}} selected{{end}}>{{.Name}}</option>{{end}}</select></label>
 </div>
 {{if not .ActiveEditable}}<div class="settings-section">
   <p class="settings-note">プリセットは直接編集できません。複製してから編集してください。</p>
@@ -50,10 +50,6 @@
 </div>{{else}}{{$s := .ActiveStyle}}
 <div class="settings-section">
   <label class="field"><span>名前</span><input type="text" name="value" value="{{$s.Name}}" hx-post="/settings/rename" hx-target="#settings" hx-swap="outerHTML" hx-trigger="change" /></label>
-  <div class="settings-actions">
-    <button type="button" class="mm-btn" hx-post="/settings/export" hx-target="#settings" hx-swap="outerHTML">エクスポート</button>
-    <button type="button" class="mm-btn" hx-post="/settings/delete" hx-target="#content">削除</button>
-  </div>
 </div>
 <div class="settings-section">
   <div class="settings-heading">本文</div>
@@ -121,6 +117,10 @@
 <div class="settings-section">
   <div class="settings-heading">上書き CSS（上級者向け）</div>
   <textarea class="custom-css" name="value" rows="6" spellcheck="false" hx-post="/settings/field/customCSS" hx-target="#customcss" hx-swap="outerHTML" hx-trigger="input changed delay:300ms">{{$s.CustomCSS}}</textarea>
+</div>
+{{/* 危険操作はダイアログ最下部に隔離する（削除で light がアクティブに戻る）。 */}}
+<div class="settings-section settings-danger">
+  <button type="button" class="mm-btn mm-btn-danger" hx-post="/settings/delete" hx-target="#content">このスタイルを削除</button>
 </div>
 {{end}}{{end}}
 
@@ -210,3 +210,9 @@
 <div id="tabbar" hx-swap-oob="true">{{template "tabbar-inner" .}}</div>
 <aside id="sidebar"{{if not .SidebarOpen}} hidden{{end}} hx-swap-oob="true">{{template "sidebar-inner" .}}</aside>
 {{template "dialog-host-oob" .}}{{end}}
+
+{{/* 本文が変わらない操作（上書き保存等）の応答: 本文は差し替えず（HX-Reswap: none）、
+     タブバー/サイドバーのみ OOB 更新する。閲覧のスクロール位置・編集キャレットを保ち、
+     表示中のダイアログにも触れない。 */}}
+{{define "navkeep"}}<div id="tabbar" hx-swap-oob="true">{{template "tabbar-inner" .}}</div>
+<aside id="sidebar"{{if not .SidebarOpen}} hidden{{end}} hx-swap-oob="true">{{template "sidebar-inner" .}}</aside>{{end}}

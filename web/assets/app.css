@@ -42,11 +42,6 @@ body {
 .tb-btn:hover {
   background: #eaeef2;
 }
-.tb-right {
-  margin-left: auto;
-  display: flex;
-  align-items: stretch;
-}
 .tab {
   display: inline-flex;
   align-items: center;
@@ -150,39 +145,18 @@ body {
   padding: 0.6rem 0.75rem;
   border-bottom: 1px solid #e6e9ee;
 }
-.settings-label {
-  display: block;
-  font-size: 0.8rem;
-  color: #57606a;
-  margin-bottom: 0.4rem;
-}
 .settings-note {
   margin: 0 0 0.6rem;
   font-size: 0.85rem;
   color: #57606a;
 }
-.style-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+/* 危険操作エリア（削除）。最下部に隔離し、全幅の danger ボタンで通常操作と区別する。 */
+.settings-danger {
+  border-bottom: none;
 }
-.style-opt {
+.settings-danger .mm-btn-danger {
   display: block;
   width: 100%;
-  text-align: left;
-  border: 1px solid transparent;
-  background: transparent;
-  cursor: pointer;
-  padding: 0.35rem 0.5rem;
-  border-radius: 6px;
-  color: #24292f;
-}
-.style-opt:hover {
-  background: #eaeef2;
-}
-.style-opt.active {
-  background: #dbeafe;
-  font-weight: 600;
 }
 .settings-heading {
   font-weight: 600;
@@ -246,11 +220,6 @@ body {
   box-sizing: border-box;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.8rem;
-}
-.settings-actions {
-  display: flex;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
 }
 .heading-details {
   border: 1px solid #e6e9ee;
