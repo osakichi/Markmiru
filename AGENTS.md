@@ -133,11 +133,12 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
   - **実行時表示**: Go の ldflags `-X main.version=<sha>`（`main.version` の既定は `dev`）。`ReadReadme()` が About（README）タブ先頭に「バージョン: <sha>」を追記。
 - **ビルドスクリプト**: `scripts/build.ps1`（Windows・動作確認済み）。`scripts/build.sh`（macOS/Linux 用、同等処理）は **macOS で動作確認済み（arm64・ビルド／起動／アプリ機能まで実機検証。ただし Go-SSR 化前の検証で、Go-SSR 版の再検証は残タスク）／Linux は未検証**（Linux 対応着手時に検証すること）。
 - **注意**: `scripts/build.ps1` は PowerShell 5.1 が BOM 無し UTF-8 の日本語コメントを誤読する問題を避けるため、**コメントを ASCII（英語）で記述**している。編集時もこの方針を維持する。
-- **配布物（`dist/`）**: ビルド成功後、両スクリプトが `dist/Markmiru-<platform>-<arch>-<sha>-<yyyymmdd>.zip` を出力する（`<sha>`＝版と同じ git ショート SHA、`<yyyymmdd>`＝作成日）。Windows=`.exe` を `Compress-Archive`、macOS=`.app` を `ditto -c -k --keepParent`（バンドルの権限/シンボリックリンク保持）。**Linux は AppImage 仮決めのため未実装でスキップ**。`dist/` は `.gitignore` 済み（配布物はコミットしない）。
+- **配布物（`dist/`）**: ビルド成功後、両スクリプトが `dist/Markmiru-<platform>-<arch>-<sha>-<yyyymmdd>.zip` を出力する（`<sha>`＝版と同じ git ショート SHA、`<yyyymmdd>`＝作成日）。Windows=`.exe` を `Compress-Archive`、macOS=`.app` を `ditto -c -k --keepParent`（バンドルの権限/シンボリックリンク保持）。**Linux は AppImage 仮決めのため未実装でスキップ**。`dist/` は `.gitignore` 済み（配布物はコミットしない）。`<arch>` は `build.sh` が `uname -m` から取得する一方、**`build.ps1` は `windows-amd64` 固定**（アーキテクチャを検出しない。ARM Windows 対応時は要修正）。
 
 ## ビルドツールチェーン（Go のみ）
 
 - 本アプリは Go-SSR（Wails `AssetServer.Handler`）で、**ビルドすべきフロントエンドは無い**（`wails.json` にフロントフックは無く、`wails build` は "No Install/Build command. Skipping." で Go のみをコンパイルする。`frontend/wailsjs` は `wails build` が再生成するバインディングで `.gitignore` により git 管理外）。
 - 必要なのは **Go（`go.mod` の `go 1.25`）・Wails CLI v2・git** のみ。`scripts/build.ps1` / `scripts/build.sh` は git SHA を埋め込み `wails build` を実行して `dist/` に ZIP を出力する。**両スクリプトは版取得に `git rev-parse` / `git status` を使うため、git リポジトリの作業ツリー内で実行する必要がある**（非 git 環境では SHA 取得に失敗して停止。版を埋め込まない素の `wails build`〔版は `dev`〕は非 git でも可）。
 - **macOS は SDK 11 以上が必須**: Wails v2 の `WailsContext.m` が macOS 11 で追加された通知定数（`UNNotificationPresentationOptionList` / `Banner`）を参照するため、Command Line Tools の SDK が 10.15 以前だと undeclared identifier でコンパイル失敗する（`@available` は実行時チェックのみでコンパイルは通らない）。`xcrun --show-sdk-version` で確認し、古ければ CLT を入れ直す（2026-07 に古い Intel Mac で発生・CLT 再インストールで解消済み）。
+- **ビルドスクリプトは `wails` を固定パスで参照する**（`build.ps1`＝`%USERPROFILE%\go\bin\wails.exe` / `build.sh`＝`$HOME/go/bin/wails`。`PATH` は参照しない）。`GOPATH` / `GOBIN` を変更した環境ではそのままでは動かないため、スクリプト内のパスを環境に合わせる必要がある。
 - 同梱フォントの woff2 は `web/assets/fonts/` に vendoring 済み（リポジトリにコミット）。更新時のみ `scripts/vendor-fonts.sh`（@fontsource が必要）で再生成する。
