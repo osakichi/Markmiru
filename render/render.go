@@ -1,6 +1,6 @@
 // Package render は Markdown を安全な HTML へ変換する閲覧モードの描画パイプライン。
 //
-// 旧 Svelte 版の描画（renderer.ts）の挙動を Go へ移植したもの:
+// 描画の流れ:
 //
 //	goldmark（CommonMark + GFM ＋ 脚注）
 //	  → 見出しに GitHub 互換スラッグ id 付与
@@ -175,7 +175,7 @@ func HighlightCSS(scheme string) string {
 
 // headingIDTransformer は見出しに GitHub 互換のスラッグ id を付与する。
 // 規則: トリム → 小文字化 → 文字/数字/結合文字/空白/_/- 以外を除去 → 連続空白を - に。
-// 同一スラッグは 2 件目以降に -1, -2… を付ける（renderer.ts と同じ重複解決）。
+// 同一スラッグは 2 件目以降に -1, -2… を付けて重複を解決する。
 type headingIDTransformer struct{}
 
 func (headingIDTransformer) Transform(doc *ast.Document, reader text.Reader, _ parser.Context) {
@@ -359,7 +359,9 @@ func addExternalLinkRel(htmlStr string) string {
 
 func processImage(n *xhtml.Node, opts Options, saw *bool) {
 	src := getAttr(n, "src")
-	if remoteURLRe.MatchString(src) || remoteURLRe.MatchString(getAttr(n, "srcset")) {
+	// リモート（http/https/プロトコル相対）: src か srcset の「いずれかの候補」に含まれれば
+	// ファイル単位の表示確認ゲートにかける（srcset は全候補を走査。先頭空白等も正規化）。
+	if isRemoteURL(src) || srcsetHasRemote(getAttr(n, "srcset")) {
 		*saw = true
 		if !opts.AllowRemoteImages {
 			// 遮断: 退避してから src/srcset を除去（読み込みを発生させない）。
@@ -370,6 +372,17 @@ func processImage(n *xhtml.Node, opts Options, saw *bool) {
 			delAttr(n, "srcset")
 			setAttr(n, "data-remote-blocked", "")
 		}
+		return
+	}
+	// クロスホスト UNC（\\別ホスト\...）: 読み込むと Windows が別サーバへ自動で認証情報
+	// （NTLM ハッシュ）を送出するため、表示確認は出さず常に遮断する。同一ホスト UNC
+	// （文書と同じサーバ）はローカルとして下で読み込む。
+	if isCrossHostUNC(opts.BaseDir, src) {
+		if src != "" {
+			setAttr(n, "data-blocked-src", src)
+		}
+		delAttr(n, "src")
+		setAttr(n, "data-remote-blocked", "")
 		return
 	}
 	// ローカル画像（<img> のみ）を data URI 化する。
@@ -383,6 +396,12 @@ func processImage(n *xhtml.Node, opts Options, saw *bool) {
 
 // imageToDataURI はローカル画像を読み込み data URI を返す（失敗・不在・サイズ超過は空文字）。
 func imageToDataURI(baseDir, src string) string {
+	// セキュリティ要: クロスホスト UNC は決して os.ReadFile しない（別サーバへの SMB 接続＝
+	// 認証情報漏洩を防ぐ）。percent-encode 版 UNC（%5C%5C...）も isCrossHostUNC が
+	// デコードして判定するため、processImage をすり抜けてもここで確実に遮断する。
+	if isCrossHostUNC(baseDir, src) {
+		return ""
+	}
 	// goldmark は画像 URL を percent-encode するため（C:\ → C:%5C）デコードする。
 	if d, err := url.PathUnescape(src); err == nil {
 		src = d
@@ -409,6 +428,72 @@ func resolveImagePath(baseDir, src string) string {
 		return filepath.Clean(vol + src)
 	}
 	return filepath.Clean(filepath.Join(baseDir, src))
+}
+
+// isRemoteURL は http/https/プロトコル相対 URL かを判定する。ブラウザは属性値の前後空白を
+// 除去して解決するため、先頭空白による remoteURLRe 回避を防ぐべく TrimSpace してから判定する。
+func isRemoteURL(s string) bool {
+	return remoteURLRe.MatchString(strings.TrimSpace(s))
+}
+
+// srcsetHasRemote は srcset の「いずれかの候補」がリモート URL かを判定する。srcset は
+// 「URL 記述子, URL 記述子, …」形式で、先頭候補だけを見るとゲートを回避されるため全候補を走査する。
+func srcsetHasRemote(srcset string) bool {
+	for _, cand := range strings.Split(srcset, ",") {
+		cand = strings.TrimSpace(cand)
+		if i := strings.IndexAny(cand, " \t\n\r\f"); i >= 0 {
+			cand = cand[:i] // 記述子（1x / 2x / 100w 等）を落とし URL だけにする
+		}
+		if isRemoteURL(cand) {
+			return true
+		}
+	}
+	return false
+}
+
+// isCrossHostUNC は src（percent-encode されている可能性あり）が baseDir と異なるホストの
+// UNC（\\host\...）を指すかを判定する。true のとき読み込みは別サーバへの接続＝認証情報漏洩に
+// なるため、呼び出し側は常に遮断する。baseDir 自体が同一ホストの UNC 上にある場合のみ許可。
+func isCrossHostUNC(baseDir, src string) bool {
+	if d, err := url.PathUnescape(src); err == nil {
+		src = d
+	}
+	host, isUNC := uncHost(src)
+	if !isUNC {
+		return false
+	}
+	baseHost, baseIsUNC := uncHost(baseDir)
+	return !baseIsUNC || !strings.EqualFold(host, baseHost)
+}
+
+// uncHost は Windows UNC パス（\\host\share… / \\?\UNC\host\share…、スラッシュ混在も可）の
+// ホスト名を返す。UNC でなければ ("", false)。拡張長ローカルパス（\\?\C:\…）は UNC ではない。
+func uncHost(p string) (string, bool) {
+	s := strings.ReplaceAll(p, "/", `\`)
+	if rest, ok := cutPrefixFold(s, `\\?\UNC\`); ok {
+		return uncFirstComponent(rest), true
+	}
+	if _, ok := cutPrefixFold(s, `\\?\`); ok {
+		return "", false // \\?\C:\… 等の拡張長ローカルパス（UNC ではない）
+	}
+	if strings.HasPrefix(s, `\\`) {
+		return uncFirstComponent(s[2:]), true
+	}
+	return "", false
+}
+
+func uncFirstComponent(s string) string {
+	if i := strings.IndexByte(s, '\\'); i >= 0 {
+		return s[:i]
+	}
+	return s
+}
+
+func cutPrefixFold(s, prefix string) (string, bool) {
+	if len(s) >= len(prefix) && strings.EqualFold(s[:len(prefix)], prefix) {
+		return s[len(prefix):], true
+	}
+	return "", false
 }
 
 func imageMIME(ext string) string {

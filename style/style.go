@@ -1,8 +1,8 @@
 // Package style は閲覧モードのスタイル（構造化データ）と CSS 変数への変換を担う。
 //
-// 旧 Svelte 版の styleDef.ts を Go へ移植したもの。JSON フィールド名は
-// 旧 TS 側と完全一致させており（config の stylesJson 互換）、styleToVars / serializeStyle /
-// parseStyleFile / normalizeStyle / プリセットの出力が一致する。
+// JSON フィールド名は config の stylesJson として永続化・エクスポート/インポートされる
+// （過去バージョンの設定とも互換）。Vars（CSS 変数生成）・SerializeStyle・ParseStyleFile・
+// NormalizeStyle・プリセットが中核。
 //
 // 設計: docs/スタイル設定設計.md §1, §2, §6 / docs/アーキテクチャ・画面設計.md §6
 package style
@@ -91,7 +91,7 @@ func (s Style) clone() Style {
 // Clone は headings を含む深いコピーを返す（呼び出し側がスタイルを複製・編集する用）。
 func (s Style) Clone() Style { return s.clone() }
 
-// 同梱フォント（@fontsource）。styleDef.ts と同一。
+// 同梱フォント（@fontsource 由来の woff2 を vendoring）のフォントスタック。
 const (
 	SANS       = `"Noto Sans JP", -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif`
 	SERIF      = `"Noto Serif JP", "Hiragino Mincho ProN", "Yu Mincho", serif`
@@ -108,7 +108,7 @@ type FontOption struct {
 	Value string
 }
 
-// FontOptions は本文/見出しフォントの選択肢（styleDef.ts の FONT_OPTIONS と同一）。
+// FontOptions は本文/見出しフォントの選択肢（設定パネルのプルダウン用）。
 func FontOptions() []FontOption {
 	return []FontOption{
 		{"Noto Sans JP（ゴシック）", SANS},
@@ -117,7 +117,7 @@ func FontOptions() []FontOption {
 	}
 }
 
-// CodeFontOptions は等幅フォントの選択肢（styleDef.ts の CODE_FONT_OPTIONS と同一）。
+// CodeFontOptions は等幅フォント（コード/編集オーバーレイ）の選択肢（設定パネルのプルダウン用）。
 func CodeFontOptions() []FontOption {
 	return []FontOption{
 		{"Noto Sans Mono", MONO},
@@ -130,7 +130,7 @@ func num(f float64) string {
 	return strconv.FormatFloat(f, 'g', -1, 64)
 }
 
-// defaultHeadings は既定の見出し定義（色を与えて生成）。styleDef.ts と同一。
+// defaultHeadings は既定の見出し定義（色を与えて生成）。
 func defaultHeadings(color string) []HeadingStyle {
 	sizes := []float64{32, 24, 20, 16, 14, 13}
 	hs := make([]HeadingStyle, len(sizes))
@@ -154,7 +154,7 @@ type KV struct {
 	Value string
 }
 
-// Vars は Style から CSS 変数（順序付き）を生成する。styleDef.ts の styleToVars と同一。
+// Vars は Style から CSS 変数（順序付き）を生成する。
 func Vars(p Style) []KV {
 	maxWidth := "none"
 	if !p.MaxWidthFull {
@@ -247,8 +247,8 @@ func BaseStyleName(name string) string {
 	return name
 }
 
-// Presets は標準プリセット（複製・編集できる雛形）を新しいスライスとして返す。
-// styleDef.ts の PRESETS と同一値。呼び出しごとに独立したコピーを返す。
+// Presets は標準プリセット（ライト / ダーク / GitHub 風 / セピア。複製・編集できる雛形）を
+// 呼び出しごとに独立したスライス（コピー）として返す。
 func Presets() []Style {
 	return []Style{
 		{
@@ -373,7 +373,7 @@ func ParseStyleFile(text string) (Style, error) {
 	return normalizeRaw(env.Style)
 }
 
-// --- 名前ヘルパ（[]Style に対する純関数。style.svelte.ts の対応ロジック） ---
+// --- 名前ヘルパ（[]Style に対する純関数） ---
 
 // NameTaken は name が既存（exceptID 以外）と重複するか（前後空白を無視）。
 func NameTaken(styles []Style, name, exceptID string) bool {
