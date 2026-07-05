@@ -1,7 +1,7 @@
 # Markmiru build script (Windows / PowerShell).
 #
-# Go-only build: the app is Go-SSR (Wails AssetServer.Handler). There is no Node/npm/Vite
-# frontend to install or bundle. wails build compiles the Go backend and packages the exe;
+# Go-only build: the app is Go-SSR (Wails AssetServer.Handler). There is no frontend
+# to install or bundle. wails build compiles the Go backend and packages the exe;
 # -clean wipes build/bin so no stale artifact survives. Go's content-addressed cache tracks source.
 #
 # Embeds the git short SHA as the version:

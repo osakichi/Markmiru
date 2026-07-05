@@ -35,7 +35,7 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 
 ## 依存パッケージ / ライブラリ
 
-本アプリは **Wails v2 ＋ Go-SSR** 構成です。状態管理・Markdown 描画・HTML 生成を Go が担い（`html/template`）、htmx が操作を Go のエンドポイント（`http.Handler`）へ橋渡しします。WebView 内の自作 JavaScript は `glue.js` のみ（mermaid.js・htmx は既製ライブラリ）。Node/npm/Vite は使用しません。
+本アプリは **Wails v2 ＋ Go-SSR** 構成です。状態管理・Markdown 描画・HTML 生成を Go が担い（`html/template`）、htmx が操作を Go のエンドポイント（`http.Handler`）へ橋渡しします。WebView 内の自作 JavaScript は `glue.js` のみ（mermaid.js・htmx は既製ライブラリ）。フロントエンドのバンドル工程はありません。
 
 ### バックエンド（Go）
 
@@ -119,7 +119,7 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 
 ## ビルド環境の構築手順
 
-Go・Wails CLI の導入は全 OS で共通です。これに加えて、OS ごとにネイティブ依存（WebView ランタイム・C コンパイラ等）の導入が必要です。**Node.js / npm / Vite は不要**です（本アプリは Go-SSR で、ビルドすべきフロントエンドのバンドルがありません）。
+Go・Wails CLI の導入は全 OS で共通です。これに加えて、OS ごとにネイティブ依存（WebView ランタイム・C コンパイラ等）の導入が必要です。本アプリは Go-SSR で**ビルドすべきフロントエンドのバンドルが無い**ため、フロントエンド用の追加ツールチェーンは不要です（ビルドは Go と Wails のみで完結します）。
 
 ### 共通手順
 

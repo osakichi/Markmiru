@@ -7,5 +7,5 @@ build/README.md
 # frontend/wailsjs だけが残るため、frontend/ 全体を無視する。
 frontend/
 
-# 念のため（現行ビルドは Node/npm を使わない）。
+# 念のため（フォント再生成ツールが生成し得るディレクトリ。通常ビルドでは生じない）。
 node_modules

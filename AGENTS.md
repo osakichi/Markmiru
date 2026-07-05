@@ -14,7 +14,7 @@
   - 素の `wails build` でも生成自体は可能だが、その場合バージョンは `dev` になる。
   - **引数なしの `go build` は使わない**（Go の仕様でプロジェクト直下に実行体を生成し作業ツリーを汚すため）。コンパイルが通るかの確認だけなら成果物を残さない `go build ./...` を用いる。実行可能なバイナリが必要な場合も出力先は必ず `build/bin/` 配下にする（`go build -o build/bin/Markmiru .`）。
 - **開発時の補助コマンド**（最終確認は上記の正式ビルドで行うこと）:
-  - `wails dev` … 開発実行に使う。ただし**本プロジェクトでは HMR（Hot Module Replacement）を開発中も使用しない**方針。素早い反映が要るときは Go 再ビルド＋WebView リロードで行う（Node/Vite を使わない構成のため、そもそもフロント HMR は存在しない）。
+  - `wails dev` … 開発実行に使う。ただし**本プロジェクトでは HMR（Hot Module Replacement）を開発中も使用しない**方針。素早い反映が要るときは Go 再ビルド＋WebView リロードで行う（フロントエンドのバンドル工程が無く、そもそもフロント HMR は存在しない）。
   - Go のコンパイル確認のみ: `go build ./...`（成果物を残さない）。
   - `web` パッケージのテスト: `go test ./web/`（HTTP ハンドラの単体テスト）。全体は `go test ./...`。整形は `gofmt -w`、静的検査は `go vet ./...`。
   - 検証は正式ビルドで生成した成果物の手動動作確認でも行う。
@@ -98,7 +98,7 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 | セキュリティ | **CSP**（ミドルウェアで全レスポンスに注入） | `default-src 'none'; script-src 'self' 'unsafe-eval'; …`。外部リンクは確認ダイアログ後 `BrowserOpenURL` |
 | PDF 出力 | WebView の印刷 → PDF | 専用ライブラリ不要 |
 | スタイル変更 | Go 生成の CSS 変数（テーマ切替） | 設定はモーダルで GUI 編集。JSON 入出力はメニュー「ファイル → スタイル」 |
-| 同梱フォント | **Noto Sans/Serif/Mono JP**（woff2 を直 vendor） | `web/assets/fonts/`。@fontsource/npm は不使用 |
+| 同梱フォント | **Noto Sans/Serif/Mono JP**（woff2 を直 vendor） | `web/assets/fonts/` に vendoring 済み |
 | マルチタブ | Go 状態（`web/state.go`） | 1ウィンドウ内のタブバーで管理 |
 
 ## 選定理由（要約）
@@ -137,6 +137,6 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 
 ## ビルドツールチェーン（Go のみ）
 
-- 本アプリは Go-SSR（Wails `AssetServer.Handler`）で、**ビルドすべき Node/npm/Vite のフロントエンドは無い**（`wails.json` にフロントフックは無く、`wails build` は "No Install/Build command. Skipping." で Go のみをコンパイルする。`frontend/wailsjs` は `wails build` が再生成するバインディングで `.gitignore` により git 管理外）。
+- 本アプリは Go-SSR（Wails `AssetServer.Handler`）で、**ビルドすべきフロントエンドは無い**（`wails.json` にフロントフックは無く、`wails build` は "No Install/Build command. Skipping." で Go のみをコンパイルする。`frontend/wailsjs` は `wails build` が再生成するバインディングで `.gitignore` により git 管理外）。
 - 必要なのは **Go（`go.mod` の `go 1.25`）と Wails CLI v2** のみ。`scripts/build.ps1` / `scripts/build.sh` は git SHA を埋め込み `wails build` を実行して `dist/` に ZIP を出力する。
 - 同梱フォントの woff2 は `web/assets/fonts/` に vendoring 済み（リポジトリにコミット）。更新時のみ `scripts/vendor-fonts.sh`（@fontsource が必要）で再生成する。

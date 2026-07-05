@@ -5,7 +5,7 @@
 #   Linux 対応に着手する際に、このスクリプトの動作を必ず検証すること。
 #
 # Go のみのビルド: 本アプリは Go-SSR（Wails AssetServer.Handler）で、install/bundle すべき
-# Node/npm/Vite のフロントエンドは無い。wails build が Go バックエンドをコンパイルして exe を
+# フロントエンドは無い。wails build が Go バックエンドをコンパイルして exe を
 # パッケージし、-clean が build/bin の旧成果物を一掃する。Go は内容ハッシュのキャッシュでソース追従。
 #
 # git のショート SHA をバージョンとして埋め込む（Windows 版 build.ps1 と同等）:
