@@ -14,7 +14,7 @@
   - 素の `wails build` でも生成自体は可能だが、その場合バージョンは `dev` になる。
   - **引数なしの `go build` は使わない**（Go の仕様でプロジェクト直下に実行体を生成し作業ツリーを汚すため）。コンパイルが通るかの確認だけなら成果物を残さない `go build ./...` を用いる。実行可能なバイナリが必要な場合も出力先は必ず `build/bin/` 配下にする（`go build -o build/bin/Markmiru .`）。
 - **開発時の補助コマンド**（最終確認は上記の正式ビルドで行うこと）:
-  - `wails dev` … 開発実行に使う。ただし**本プロジェクトでは HMR（Hot Module Replacement）を開発中も使用しない**方針。素早い反映が要るときは Go 再ビルド＋WebView リロードで行う（Node/Vite は撤去済みで、そもそもフロント HMR は存在しない）。
+  - `wails dev` … 開発実行に使う。ただし**本プロジェクトでは HMR（Hot Module Replacement）を開発中も使用しない**方針。素早い反映が要るときは Go 再ビルド＋WebView リロードで行う（Node/Vite を使わない構成のため、そもそもフロント HMR は存在しない）。
   - Go のコンパイル確認のみ: `go build ./...`（成果物を残さない）。
   - `web` パッケージのテスト: `go test ./web/`（HTTP ハンドラの単体テスト）。全体は `go test ./...`。整形は `gofmt -w`、静的検査は `go vet ./...`。
   - 検証は正式ビルドで生成した成果物の手動動作確認でも行う。
@@ -40,7 +40,7 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 - `web`（新規パッケージ）— **Go-SSR の中心**。`http.Handler`（`web.go`：全 htmx エンドポイント＋CSP ミドルウェア）、`html/template` フラグメント（`web/templates/*.html`）、アプリ状態（`web/state.go`：タブ集合／アクティブ／dirty／セッション／スタイル）、静的アセット（`web/assets/`：`glue.js` / `htmx.min.js` / `mermaid.min.js` / CSS / 同梱フォント）。OS 連携は `web.Host` インタフェース経由で `main` の `webHost` アダプタが `app.go` のメソッドへ委譲する。
 - `render`（新規）— 描画パイプライン **goldmark（GFM・脚注）→ chroma（コードハイライト）→ bluemonday（サニタイズ）**。mermaid はプレースホルダのまま返し WebView の mermaid.js が描画。ローカル画像の data URI 化・外部画像の遮断制御もここ。
 - `style`（新規）— スタイル定義（Go 型）→ CSS 変数生成。プリセット・エクスポート/インポート。設計は `docs/スタイル設定設計.md`。
-- `app.go` — `App` 構造体と Wails バインドの**公開メソッド**（`OpenFiles` / `ReadFile` / `SaveFile` / `SaveFileDialog` / `ExportStyleDialog` / `ImportStyleDialog` / `SetEditMenuEnabled` / `SetSaveMenuEnabled` / `OpenExternalURL` / `Quit` / `FocusWindow` 等、OS 機能に限定）。小文字始まりは非公開（`emit` / `openFileFromIPC` 等）。`LICENSE.md` / `README.md` を `//go:embed`。※Svelte 専用だったバインド（`GetPendingFiles` / `SetDirtyState` / クリップボード / `ReadImageAsDataURL` / `RenderHTML` / `HighlightCSS`）はカットオーバーで撤去。
+- `app.go` — `App` 構造体と Wails バインドの**公開メソッド**（`OpenFiles` / `ReadFile` / `SaveFile` / `SaveFileDialog` / `ExportStyleDialog` / `ImportStyleDialog` / `SetEditMenuEnabled` / `SetSaveMenuEnabled` / `SetModeMenuEnabled` / `OpenExternalURL` / `Quit` / `FocusWindow` 等、OS 機能に限定）。小文字始まりは非公開（`emit` / `openFileFromIPC` 等）。`LICENSE.md` / `README.md` を `//go:embed`。
 - `config.go` — `config.json`（`os.UserConfigDir()/Markmiru/`）への設定・セッション永続化。標準ライブラリのみ。ウィンドウ状態は `saveWindowState`、セッション/スタイル/サイドバーは `beforeClose` の `persistSession`（`web.State` から生成・main で注入）が保存する。
 - `platform_*.go`（`_windows` / `_darwin` / `_linux` / `_other`）— OS 依存処理（ウィンドウ前面化・WebView フォーカス等）をビルドタグで切替。`isMacOS` 等でメニューを分岐。
 - `single_instance.go` — Unix ソケット（`os.UserCacheDir()/Markmiru/`）による多重起動防止＋IPC。2 つ目の起動は既存へパスを渡して終了、既存ウィンドウを前面化。既存アプリでは `ipc:open-file` イベント→glue→`POST /tabs/open-path` でそのファイルを開く。
@@ -94,11 +94,11 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 | 図表 | **mermaid.js** | WebView 内でそのまま描画。`securityLevel: 'strict'` |
 | コードハイライト | **chroma**（Go） | `WithClasses`。github / github-dark テーマ |
 | 編集モード | **透明 textarea オーバーレイ ＋ chroma ハイライト層** | 軽量。行番号等は持たない（閲覧重視） |
-| サニタイズ | **bluemonday**（Go） | 許可リストで無害化（script 等除去・外部リンクへ `rel` 付与・外部画像の遮断制御） |
+| サニタイズ | **bluemonday**（Go） | 許可リストで無害化（script 等除去）。外部リンクへの `rel` 付与・外部画像の遮断は `render` パッケージが実施 |
 | セキュリティ | **CSP**（ミドルウェアで全レスポンスに注入） | `default-src 'none'; script-src 'self' 'unsafe-eval'; …`。外部リンクは確認ダイアログ後 `BrowserOpenURL` |
 | PDF 出力 | WebView の印刷 → PDF | 専用ライブラリ不要 |
 | スタイル変更 | Go 生成の CSS 変数（テーマ切替） | 設定はモーダルで GUI 編集。JSON 入出力はメニュー「ファイル → スタイル」 |
-| 同梱フォント | **Noto Sans/Serif/Mono JP**（woff2 を直 vendor） | `web/assets/fonts/`。@fontsource/npm は撤去 |
+| 同梱フォント | **Noto Sans/Serif/Mono JP**（woff2 を直 vendor） | `web/assets/fonts/`。@fontsource/npm は不使用 |
 | マルチタブ | Go 状態（`web/state.go`） | 1ウィンドウ内のタブバーで管理 |
 
 ## 選定理由（要約）
@@ -118,7 +118,7 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 
 - **ライセンス**: Markmiru 自体＋サードパーティ（Wails・goldmark・chroma・bluemonday・htmx・mermaid・Noto フォント〔OFL〕等）のライセンスを `LICENSE.md`（リポジトリ直下）に統合。`//go:embed` で実行バイナリに埋め込む（別ファイル配置は不要）。ネイティブメニュー「ヘルプ → ライセンス...」→ `menu:license` イベント → glue → `POST /doc/license` で編集不可タブとして表示（内容は `ReadLicense()`）。
 - **About（README）**: `README.md`（リポジトリ直下）も `//go:embed`。「ヘルプ → Markmiru について...」→ `menu:about` → `POST /doc/about` で編集不可タブ表示（`ReadReadme()`。専用 About 画面は設けず README を代替とする）。
-- いずれも `filePath=null` の readOnly タブで開き、「開いているファイル一覧」やセッションには残さない。
+- いずれも `filePath=null` の readOnly タブで開く。セッションには残さない（表示中はタブ・サイドバーの「開いているファイル一覧」には他のタブと同様に現れる）。
 
 ## アプリアイコン
 
@@ -131,12 +131,12 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 - **埋め込み方法（ビルドスクリプトが両方を実施）**:
   - **OS プロパティ**: `wails.json` の `info.productVersion` に SHA を一時注入 → Wails が `build/windows/info.json`（Windows）・`build/darwin/Info.plist`（macOS）へ展開して実行バイナリに埋め込む。注入後は `wails.json` を**元に戻す**（リポジトリに SHA 差分を残さない。`info.productVersion` の既定は `dev`）。Windows「詳細 → 製品バージョン」に表示（`File version` は数値固定 `0.0.0.0`＝`build/windows/info.json` の `fixed.file_version`）。
   - **実行時表示**: Go の ldflags `-X main.version=<sha>`（`main.version` の既定は `dev`）。`ReadReadme()` が About（README）タブ先頭に「バージョン: <sha>」を追記。
-- **ビルドスクリプト**: `scripts/build.ps1`（Windows・動作確認済み）。`scripts/build.sh`（macOS/Linux 用、同等処理）は **macOS で動作確認済み（arm64・ビルド／起動／アプリ機能まで実機検証）／Linux は未検証**（Linux 対応着手時に検証すること）。
+- **ビルドスクリプト**: `scripts/build.ps1`（Windows・動作確認済み）。`scripts/build.sh`（macOS/Linux 用、同等処理）は **macOS で動作確認済み（arm64・ビルド／起動／アプリ機能まで実機検証。ただし Go-SSR 化前の検証で、Go-SSR 版の再検証は残タスク）／Linux は未検証**（Linux 対応着手時に検証すること）。
 - **注意**: `scripts/build.ps1` は PowerShell 5.1 が BOM 無し UTF-8 の日本語コメントを誤読する問題を避けるため、**コメントを ASCII（英語）で記述**している。編集時もこの方針を維持する。
 - **配布物（`dist/`）**: ビルド成功後、両スクリプトが `dist/Markmiru-<platform>-<arch>-<sha>-<yyyymmdd>.zip` を出力する（`<sha>`＝版と同じ git ショート SHA、`<yyyymmdd>`＝作成日）。Windows=`.exe` を `Compress-Archive`、macOS=`.app` を `ditto -c -k --keepParent`（バンドルの権限/シンボリックリンク保持）。**Linux は AppImage 仮決めのため未実装でスキップ**。`dist/` は `.gitignore` 済み（配布物はコミットしない）。
 
 ## ビルドツールチェーン（Go のみ）
 
-- 本アプリは Go-SSR（Wails `AssetServer.Handler`）で、**ビルドすべき Node/npm/Vite のフロントエンドは無い**（`frontend/` は撤去済み。`wails.json` にフロントフックは無く、`wails build` は "No Install/Build command. Skipping." で Go のみをコンパイルする）。
+- 本アプリは Go-SSR（Wails `AssetServer.Handler`）で、**ビルドすべき Node/npm/Vite のフロントエンドは無い**（`wails.json` にフロントフックは無く、`wails build` は "No Install/Build command. Skipping." で Go のみをコンパイルする。`frontend/wailsjs` は `wails build` が再生成するバインディングで `.gitignore` により git 管理外）。
 - 必要なのは **Go（`go.mod` の `go 1.25`）と Wails CLI v2** のみ。`scripts/build.ps1` / `scripts/build.sh` は git SHA を埋め込み `wails build` を実行して `dist/` に ZIP を出力する。
 - 同梱フォントの woff2 は `web/assets/fonts/` に vendoring 済み（リポジトリにコミット）。更新時のみ `scripts/vendor-fonts.sh`（@fontsource が必要）で再生成する。

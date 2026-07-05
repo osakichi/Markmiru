@@ -12,7 +12,7 @@
 1. いいい
 1. ううう
 
-[外部リンク](https://github.com/osakichi/markmiru/blob/main/frontend/src/lib/components/ExportPickerDialog.svelte)
+[外部リンク](https://github.com/osakichi/Markmiru/blob/main/README.md)
 
 [文書内リンク](#mermaid-図)
 
@@ -43,7 +43,7 @@ function greet(name) {
 
 ```mermaid
 graph TD
-  A[Markdown] --> B{markdown-it}
+  A[Markdown] --> B{goldmark}
   B --> C[HTML]
   B --> D[mermaid 図]
   C --> E[閲覧モード表示]

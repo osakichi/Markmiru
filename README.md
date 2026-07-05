@@ -21,7 +21,7 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
   - GFM（表・チェックリスト・打消し線・自動リンク）・脚注
 - **編集モード**：透明 textarea を chroma ハイライト層に重ねるオーバーレイ方式（ソフトラップ・控えめな構文ハイライト）
 - 閲覧／編集モードの切り替え（セッション復元時は**常に閲覧モード**で開く）
-- **ページ内検索**（Ctrl+F／メニュー「検索...」。閲覧・編集の両モード）
+- **ページ内検索**（Ctrl+F。メニュー「検索...」は Windows/Linux、macOS は Cmd+F。閲覧・編集の両モード）
 - **スタイル**による配色（ライト／ダーク）／表示のカスタマイズ（ライト／ダーク／GitHub 風／セピアのプリセットを複製して編集可）
   - 本文・見出し・コード・引用・リスト・表などの各パラメータを GUI 設定パネルで調整
   - カスタム CSS による上書き（上級者向け）
@@ -35,7 +35,7 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 
 ## 依存パッケージ / ライブラリ
 
-本アプリは **Wails v2 ＋ Go-SSR** 構成です。状態管理・Markdown 描画・HTML 生成を Go が担い（`html/template`）、htmx が操作を Go のエンドポイント（`http.Handler`）へ橋渡しします。WebView 内の自作 JavaScript は `glue.js` のみ（mermaid.js・htmx は既製ライブラリ）。Node/npm/Vite/Svelte は使用しません。
+本アプリは **Wails v2 ＋ Go-SSR** 構成です。状態管理・Markdown 描画・HTML 生成を Go が担い（`html/template`）、htmx が操作を Go のエンドポイント（`http.Handler`）へ橋渡しします。WebView 内の自作 JavaScript は `glue.js` のみ（mermaid.js・htmx は既製ライブラリ）。Node/npm/Vite は使用しません。
 
 ### バックエンド（Go）
 
@@ -64,12 +64,12 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 | プラットフォーム | 状態 |
 |------------------|------|
 | **Windows** | ✅ 対応・動作確認済み（WebView2） |
-| **macOS** | ✅ 対応・**動作確認済み**（arm64。ビルド・起動・アプリ機能まで実機検証）（WKWebView） |
+| **macOS** | ✅ 対応（arm64 で実機検証済み。ただし Go-SSR 化後の再検証は未実施）（WKWebView） |
 | **Linux** | 🔄 コード対応済み・**未検証**（WebKitGTK） |
 
 - 最終目標は Windows / macOS / Linux のデスクトップ 3 種対応です。
 - モバイル（iPhone / Android）は対象外です（Wails 採用のため）。
-- **macOS は arm64 でビルド・起動・アプリ機能まで実機で確認済みです。Linux の手順は Wails の標準的な要件に基づく想定で、実機での確認は行っていません**（今後整備予定）。以降の各節で Linux はこの前提です（🔄 印で示します）。
+- **macOS は arm64 でビルド・起動・アプリ機能まで実機で確認済みです（Go-SSR 化後の再検証は未実施）。Linux の手順は Wails の標準的な要件に基づく想定で、実機での確認は行っていません**（今後整備予定）。以降の各節で Linux はこの前提です（🔄 印で示します）。
 
 ---
 
@@ -184,7 +184,7 @@ Go・Wails CLI の導入は全 OS で共通です。これに加えて、OS ご�
      ```powershell
      & .\scripts\build.ps1
      ```
-   - macOS / Linux（macOS は arm64 で動作確認済み / Linux は未検証 🔄）:
+   - macOS / Linux（macOS は arm64 で動作確認済み〔Go-SSR 化後は再検証待ち〕 / Linux は未検証 🔄）:
      ```bash
      ./scripts/build.sh
      ```
