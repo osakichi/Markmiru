@@ -157,6 +157,11 @@ Go・Wails CLI の導入は全 OS で共通です。これに加えて、OS ご�
   ```bash
   xcode-select --install
   ```
+- **SDK は macOS 11 以上が必要**です。Wails v2 が macOS 11 で追加された API（`UNNotificationPresentationOptionList` 等）を参照するため、Command Line Tools 付属の SDK が古いと `use of undeclared identifier 'UNNotificationPresentationOptionList'` でコンパイルに失敗します。SDK バージョンは `xcrun --show-sdk-version` で確認でき、古い場合は Command Line Tools を入れ直してください:
+  ```bash
+  sudo rm -rf /Library/Developer/CommandLineTools
+  xcode-select --install
+  ```
 - **WKWebView** は macOS 標準のため追加導入は不要の想定です。
 - **PATH の通し方**: `export PATH="$HOME/go/bin:$PATH"` を `~/.zshrc` 等に追記。
 

@@ -139,4 +139,5 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 
 - 本アプリは Go-SSR（Wails `AssetServer.Handler`）で、**ビルドすべきフロントエンドは無い**（`wails.json` にフロントフックは無く、`wails build` は "No Install/Build command. Skipping." で Go のみをコンパイルする。`frontend/wailsjs` は `wails build` が再生成するバインディングで `.gitignore` により git 管理外）。
 - 必要なのは **Go（`go.mod` の `go 1.25`）と Wails CLI v2** のみ。`scripts/build.ps1` / `scripts/build.sh` は git SHA を埋め込み `wails build` を実行して `dist/` に ZIP を出力する。
+- **macOS は SDK 11 以上が必須**: Wails v2 の `WailsContext.m` が macOS 11 で追加された通知定数（`UNNotificationPresentationOptionList` / `Banner`）を参照するため、Command Line Tools の SDK が 10.15 以前だと undeclared identifier でコンパイル失敗する（`@available` は実行時チェックのみでコンパイルは通らない）。`xcrun --show-sdk-version` で確認し、古ければ CLT を入れ直す（2026-07 に古い Intel Mac で発生・CLT 再インストールで解消済み）。
 - 同梱フォントの woff2 は `web/assets/fonts/` に vendoring 済み（リポジトリにコミット）。更新時のみ `scripts/vendor-fonts.sh`（@fontsource が必要）で再生成する。
