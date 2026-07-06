@@ -24,6 +24,10 @@ func platformGrantForeground() {}
 func activateWindowWin32()     {}
 func focusWebview()            {}
 
+// platformPrint は macOS 専用のネイティブ印刷実装。この OS では未処理（false）を返し、
+// 呼び出し側が Wails の WindowPrint（WebView 内で window.print() を実行）へフォールバックする。
+func platformPrint() bool { return false }
+
 // verifyPeer は接続元プロセスの UID と実行ファイルパスを照合する。
 //   - SO_PEERCRED で UID を取得し自プロセスの UID と一致を確認（カーネル保証）
 //   - /proc/<pid>/exe で実行ファイルパスを照合（同一ユーザーの別プログラムを弾く）

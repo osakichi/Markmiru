@@ -23,8 +23,12 @@ const wmSetFocus = 0x0007 // WM_SETFOCUS
 // isMacOS は macOS 固有のメニュー構成（標準アプリメニューの付与等）を切り替えるための定数。
 const isMacOS = false
 
-func setSocketPerms(_ string) {}
+func setSocketPerms(_ string)         {}
 func verifyPeer(_ *net.UnixConn) bool { return true }
+
+// platformPrint は macOS 専用のネイティブ印刷実装。この OS では未処理（false）を返し、
+// 呼び出し側が Wails の WindowPrint（WebView 内で window.print() を実行）へフォールバックする。
+func platformPrint() bool { return false }
 
 // findMainWindow はタイトル（appTitle）からメインウィンドウのハンドルを取得する。
 // 見つからない場合は ok=false を返す。

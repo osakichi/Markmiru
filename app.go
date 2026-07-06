@@ -139,6 +139,21 @@ func (a *App) FocusWindow() {
 	focusWebview()
 }
 
+// Print は OS の印刷ダイアログを開く（glue の do-print から呼ばれる）。
+// macOS の WKWebView は window.print() を無視するため JS からここへ委譲する。
+// まず platformPrint（macOS のみ実体。縦向きデフォルトの自前 NSPrintOperation。
+// 向き等はパネルで変更可能）を試し、未処理なら Wails の WindowPrint へフォールバックする
+// （Windows/Linux はこちらが常用経路で、WebView 内で window.print() を実行する。
+// macOS でのフォールバックは横向き固定だが印刷自体は可能）。
+func (a *App) Print() {
+	if platformPrint() {
+		return
+	}
+	if a.ctx != nil {
+		runtime.WindowPrint(a.ctx)
+	}
+}
+
 // Quit はアプリを終了する（サーバ主導の終了確認ループが未保存を処理し終えた後、Host.Quit 経由で呼ばれる）。
 func (a *App) Quit() {
 	a.quitting.Store(true)

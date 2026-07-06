@@ -5,7 +5,7 @@
 //   2. 編集オーバーレイのスクロール同期
 //   3. ネイティブメニュー / IPC の Wails イベント → htmx.ajax ブリッジ
 //   4. ダイアログのフォーカス付与・Esc=拒否・危険ダイアログの 500ms 活性化
-//   5. 印刷トリガ（HX-Trigger: do-print → window.print）
+//   5. 印刷トリガ（HX-Trigger: do-print → Go の Print）
 //   6. ページ内検索（Ctrl+F）: 可視テキスト層の走査＋CSS Custom Highlight API
 //   7. 外部リンクの遷移制御（WebView 遷移防止・確認ダイアログ・OS ブラウザ委譲）
 //   8. 設定パネルの対入力同期（スライダー↔数値 / カラー↔HEX）
@@ -282,9 +282,11 @@
 
   // --- 5. 印刷トリガ -----------------------------------------------------
   // /active/print が HX-Trigger-After-Settle: do-print を返す。mermaid 描画完了を待って印刷。
+  // macOS の WKWebView は window.print() を無視するため Go の Print へ委譲する
+  // （macOS は自前のネイティブ印刷パネル、Windows/Linux は従来どおり window.print() が実行される）。
   document.body.addEventListener('do-print', function () {
     setTimeout(function () {
-      window.print()
+      if (window.go) window.go.main.App.Print()
     }, 250)
   })
 

@@ -757,7 +757,8 @@ func (s *Server) serveActiveMode(w http.ResponseWriter, r *http.Request) {
 	s.serveNav(w)
 }
 
-// serveActivePrint は印刷向けにアクティブタブを閲覧モードにし、印刷トリガを返す（glue が window.print）。
+// serveActivePrint は印刷向けにアクティブタブを閲覧モードにし、印刷トリガを返す
+// （glue が Go の Print を呼び、OS の印刷ダイアログが開く）。
 // 印刷は印刷向け（ライト）配色にするため、mermaid をライトで描画させるべく本文を scheme=light で出す
 // （コードは @media print の #print-code-theme がライトで上書きする）。
 func (s *Server) serveActivePrint(w http.ResponseWriter, _ *http.Request) {

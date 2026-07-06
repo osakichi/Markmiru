@@ -14,3 +14,7 @@ func verifyPeer(_ *net.UnixConn) bool { return true }
 func platformGrantForeground()        {}
 func activateWindowWin32()            {}
 func focusWebview()                   {}
+
+// platformPrint は macOS 専用のネイティブ印刷実装。この OS では未処理（false）を返し、
+// 呼び出し側が Wails の WindowPrint（WebView 内で window.print() を実行）へフォールバックする。
+func platformPrint() bool { return false }
