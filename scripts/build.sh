@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Markmiru ビルドスクリプト（macOS / Linux）。
 #
-# 検証状況: macOS（arm64）で動作確認済み（ビルド・起動・アプリ機能まで実機検証）。Linux は未検証のため、
-#   Linux 対応に着手する際に、このスクリプトの動作を必ず検証すること。
+# 検証状況: macOS（arm64）・Linux（amd64, Ubuntu 24.04）で動作確認済み
+#   （いずれもビルド・起動・アプリ機能まで実機検証）。
 #
 # Go のみのビルド: 本アプリは Go-SSR（Wails AssetServer.Handler）で、install/bundle すべき
 # フロントエンドは無い。wails build が Go バックエンドをコンパイルして exe を
@@ -38,13 +38,24 @@ trap 'sed -E "s/(\"productVersion\"[[:space:]]*:[[:space:]]*)\"[^\"]*\"/\1\"dev\
 sed -E 's/("productVersion"[[:space:]]*:[[:space:]]*)"[^"]*"/\1"'"$sha"'"/' "$wails_json" > "$wails_json.tmp"
 mv "$wails_json.tmp" "$wails_json"
 
-# -clean で build/bin を先に一掃し、古い実行バイナリ/成果物を残さない。
-"$wails" build -clean -ldflags "-X main.version=$sha"
+# Linux: Wails v2 の既定リンク先は webkit2gtk-4.0 だが、Ubuntu 24.04 以降には 4.0 が無く
+# 4.1 のみのため、4.1 がある環境では webkit2_41 タグでビルドする（無い環境はタグ無し＝4.0）。
+build_tags=""
+if [ "$(uname -s)" = "Linux" ] && pkg-config --exists webkit2gtk-4.1 2>/dev/null; then
+  build_tags="webkit2_41"
+fi
 
-# 配布用 ZIP を dist/ に作成する（配布方針＝各 OS とも単純な ZIP を配るだけ）。
-# 名前: Markmiru-<platform>-<arch>-<sha>-<yyyymmdd>.zip
+# -clean で build/bin を先に一掃し、古い実行バイナリ/成果物を残さない。
+if [ -n "$build_tags" ]; then
+  "$wails" build -clean -tags "$build_tags" -ldflags "-X main.version=$sha"
+else
+  "$wails" build -clean -ldflags "-X main.version=$sha"
+fi
+
+# 配布用アーカイブを dist/ に作成する（配布方針＝各 OS とも単純なアーカイブを配るだけ）。
+# 名前: Markmiru-<platform>-<arch>-<sha>-<yyyymmdd>.zip（Linux は .tar.gz）
 #   - <sha>      = 上のバージョンと同じ git ショート SHA（dirty 時は -dirty）
-#   - <yyyymmdd> = この ZIP を作成した日付
+#   - <yyyymmdd> = このアーカイブを作成した日付
 # dist/ は git 管理外（配布物はコミットしない）。ビルド成功時のみここへ到達する（set -e）。
 date_stamp="$(date +%Y%m%d)"
 dist_dir="$root/dist"
@@ -59,8 +70,12 @@ if [ "$os" = "Darwin" ]; then
   ditto -c -k --keepParent "$root/build/bin/Markmiru.app" "$zip_path"
   echo "Packaged: $zip_path"
 else
-  # Linux: 配布方式は AppImage を「仮決め」（真の自己完結。WebKitGTK 等を同梱）。
-  # 最終決定は Linux 対応に着手する際に行う。AppImage 生成（linuxdeploy 等）は未実装・未検証のため、
-  # 現時点では ZIP を作成しない（バイナリは build/bin/Markmiru に残る）。
-  echo "Linux packaging is tentatively AppImage and not yet implemented; skipping ZIP. (Linux is unverified.)"
+  # Linux: バイナリのみを tar.gz で配布（実行権限を確実に保持できるため ZIP ではなく tar.gz）。
+  # AppImage 案は不採用——WebKitGTK は補助プロセス構成のため同梱が事実上困難で、巨大・脆弱になる
+  # （検討経緯は docs/アーキテクチャ・画面設計.md §10）。実行には WebKitGTK 4.1 / GTK3
+  # （Ubuntu デスクトップ標準搭載）が必要（README「インストール方法」参照）。
+  tar_path="$dist_dir/Markmiru-linux-$arch-$sha-$date_stamp.tar.gz"
+  rm -f "$tar_path"
+  tar -C "$root/build/bin" -czf "$tar_path" Markmiru
+  echo "Packaged: $tar_path"
 fi

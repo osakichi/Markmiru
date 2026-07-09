@@ -68,7 +68,7 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 | MUST | マルチタブで複数ドキュメントを切り替えて表示できる | ✅ 実装済み |
 | SHOULD | スタイルの修正/変更ができる | ✅ 実装済み |
 | SHOULD | PDF 出力できる | ✅ 実装済み |
-| SHOULD | クロスプラットフォーム対応 | 🔄 コード対応済み（Windows / macOS〔arm64〕動作確認済み・Linux 未検証） |
+| SHOULD | クロスプラットフォーム対応 | ✅ 実装済み（Windows / macOS〔arm64〕/ Linux〔amd64・Ubuntu 24.04〕で動作確認済み） |
 | SHOULD | Markdown の編集ができる（編集モードでの編集） | ✅ 実装済み |
 | SHOULD | 「閲覧モード」と「編集モード」を切り替えられる | ✅ 実装済み |
 | SHOULD | 不正な Markdown への防御（CSP・外部リンク制御・外部画像の表示確認・bluemonday サニタイズ） | ✅ 実装済み |
@@ -80,7 +80,7 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 - **初回対象: Windows**
 - **最終目標: Windows / macOS / Linux（デスクトップ3種）**
 - モバイル（iPhone / Android）は**対象外**（Wails 採用に伴いモバイル不可。この前提で確定）
-- 配布形態: ビルド成果物をまとめた**簡素なアーカイブ**（Windows: `.exe` を ZIP／macOS: `.app` を ZIP／Linux: AppImage〔仮決め〕）。インストーラ形式は採らない
+- 配布形態: ビルド成果物をまとめた**簡素なアーカイブ**（Windows: `.exe` を ZIP／macOS: `.app` を ZIP／Linux: バイナリを tar.gz）。インストーラ形式は採らない
 
 ## 技術スタック
 
@@ -110,8 +110,6 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 
 ## 残タスク
 
-- Linux 実機での Go-SSR 版の検証（Go-SSR 化後は Windows / macOS〔arm64〕の実機で確認済み。Linux は未検証）。
-- 配布物作成: Windows / macOS は `build.ps1` / `build.sh` が `dist/` に ZIP を出力済み（Windows=.exe / macOS=.app を ditto）。**Linux は AppImage を仮決め（未実装）**＝Linux 対応着手時に実装・最終決定する。
 - 各設計ドキュメント（`docs/`）の Go-SSR 構成への追随（順次更新）。
 
 ## 埋め込みドキュメント（ヘルプメニュー）
@@ -131,9 +129,9 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 - **埋め込み方法（ビルドスクリプトが両方を実施）**:
   - **OS プロパティ**: `wails.json` の `info.productVersion` に SHA を一時注入 → Wails が `build/windows/info.json`（Windows）・`build/darwin/Info.plist`（macOS）へ展開して実行バイナリに埋め込む。注入後は `wails.json` を**元に戻す**（リポジトリに SHA 差分を残さない。`info.productVersion` の既定は `dev`）。Windows「詳細 → 製品バージョン」に表示（`File version` は数値固定 `0.0.0.0`＝`build/windows/info.json` の `fixed.file_version`）。
   - **実行時表示**: Go の ldflags `-X main.version=<sha>`（`main.version` の既定は `dev`）。`ReadReadme()` が About（README）タブ先頭に「バージョン: <sha>」を追記。
-- **ビルドスクリプト**: `scripts/build.ps1`（Windows・動作確認済み）。`scripts/build.sh`（macOS/Linux 用、同等処理）は **macOS で動作確認済み（arm64・Go-SSR 版でビルド／起動／アプリ機能まで実機検証）／Linux は未検証**（Linux 対応着手時に検証すること）。
+- **ビルドスクリプト**: `scripts/build.ps1`（Windows・動作確認済み）。`scripts/build.sh`（macOS/Linux 用、同等処理）は **macOS（arm64）・Linux（amd64・Ubuntu 24.04）で動作確認済み**（いずれも Go-SSR 版でビルド／起動／アプリ機能まで実機検証）。Linux では WebKitGTK 4.1 の有無を pkg-config で自動判別し、あれば `-tags webkit2_41` を付与する。
 - **注意**: `scripts/build.ps1` は PowerShell 5.1 が BOM 無し UTF-8 の日本語コメントを誤読する問題を避けるため、**コメントを ASCII（英語）で記述**している。編集時もこの方針を維持する。
-- **配布物（`dist/`）**: ビルド成功後、両スクリプトが `dist/Markmiru-<platform>-<arch>-<sha>-<yyyymmdd>.zip` を出力する（`<sha>`＝版と同じ git ショート SHA、`<yyyymmdd>`＝作成日）。Windows=`.exe` を `Compress-Archive`、macOS=`.app` を `ditto -c -k --keepParent`（バンドルの権限/シンボリックリンク保持）。**Linux は AppImage 仮決めのため未実装でスキップ**。`dist/` は `.gitignore` 済み（配布物はコミットしない）。`<arch>` は `build.sh` が `uname -m` から取得する一方、**`build.ps1` は `windows-amd64` 固定**（アーキテクチャを検出しない。ARM Windows 対応時は要修正）。
+- **配布物（`dist/`）**: ビルド成功後、両スクリプトが `dist/Markmiru-<platform>-<arch>-<sha>-<yyyymmdd>.zip` を出力する（`<sha>`＝版と同じ git ショート SHA、`<yyyymmdd>`＝作成日）。Windows=`.exe` を `Compress-Archive`、macOS=`.app` を `ditto -c -k --keepParent`（バンドルの権限/シンボリックリンク保持）、Linux=バイナリのみを `tar.gz`（実行権限保持のため ZIP ではなく tar.gz。拡張子は `.tar.gz`）。`dist/` は `.gitignore` 済み（配布物はコミットしない）。`<arch>` は `build.sh` が `uname -m` から取得する一方、**`build.ps1` は `windows-amd64` 固定**（アーキテクチャを検出しない。ARM Windows 対応時は要修正）。
 
 ## ビルドツールチェーン（Go のみ）
 

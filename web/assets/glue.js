@@ -348,7 +348,14 @@
     find.container = t.container
     find.extra = t.extra
     var needle = query.toLowerCase()
-    var walker = document.createTreeWalker(t.root, NodeFilter.SHOW_TEXT, null)
+    // mermaid が SVG 内に注入する <style> 等の不可視テキストは対象外にする
+    // （一致数が膨れ、現在一致がそこへ当たるとスクロール・ハイライトが狂うため）。
+    var walker = document.createTreeWalker(t.root, NodeFilter.SHOW_TEXT, {
+      acceptNode: function (n) {
+        var tag = n.parentNode && n.parentNode.nodeName ? n.parentNode.nodeName.toLowerCase() : ''
+        return tag === 'style' || tag === 'script' ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+      }
+    })
     var node
     var matches = []
     while ((node = walker.nextNode())) {

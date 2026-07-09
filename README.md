@@ -65,11 +65,11 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 |------------------|------|
 | **Windows** | ✅ 対応・動作確認済み（WebView2） |
 | **macOS** | ✅ 対応・動作確認済み（arm64 で実機検証済み）（WKWebView） |
-| **Linux** | 🔄 コード対応済み・**未検証**（WebKitGTK） |
+| **Linux** | ✅ 対応・動作確認済み（amd64・Ubuntu 24.04 で実機検証済み）（WebKitGTK） |
 
 - 最終目標は Windows / macOS / Linux のデスクトップ 3 種対応です。
 - モバイル（iPhone / Android）は対象外です（Wails 採用のため）。
-- **macOS は arm64 でビルド・起動・アプリ機能まで実機で確認済みです。Linux の手順は Wails の標準的な要件に基づく想定で、実機での確認は行っていません**（今後整備予定）。以降の各節で Linux はこの前提です（🔄 印で示します）。
+- **macOS は arm64、Linux は amd64（Ubuntu 24.04）で、それぞれビルド・起動・アプリ機能まで実機で確認済みです。**Ubuntu 以外のディストリビューションでの動作は未確認です（必要パッケージは「[ビルド環境の構築手順](#ビルド環境の構築手順)」参照）。
 
 ---
 
@@ -89,7 +89,7 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 
 ## インストール方法
 
-> ⚠️ 配布は**インストーラ形式ではなく、ビルド成果物をまとめた簡素なアーカイブ**を予定しています（**Windows**: `.exe` のみを ZIP／**macOS**: `.app` ごと ZIP／**Linux**: 将来対応予定）。現時点では配布物は未提供のため、下記「[ソースからのビルド手順](#ソースからのビルド手順)」でビルドしてご利用ください（ビルドスクリプトは `dist/` に配布用アーカイブを出力します）。
+> ⚠️ 配布は**インストーラ形式ではなく、ビルド成果物をまとめた簡素なアーカイブ**を予定しています（**Windows**: `.exe` のみを ZIP／**macOS**: `.app` ごと ZIP／**Linux**: バイナリのみを tar.gz）。現時点では配布物は未提供のため、下記「[ソースからのビルド手順](#ソースからのビルド手順)」でビルドしてご利用ください（ビルドスクリプトは `dist/` に配布用アーカイブを出力します）。
 
 ### Windows
 
@@ -105,15 +105,14 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
   xattr -dr com.apple.quarantine /Applications/Markmiru.app
   ```
 
-### Linux 🔄
+### Linux
 
-- ビルドした実行ファイル **`build/bin/Markmiru`** を任意のディレクトリ（例: `~/.local/bin`）に配置し、実行権限を付与して起動します:
+- ビルドした実行ファイル **`build/bin/Markmiru`**（または配布 tar.gz を展開したバイナリ）を任意のディレクトリ（例: `~/.local/bin`）に配置して起動します:
   ```bash
-  chmod +x build/bin/Markmiru
-  ./build/bin/Markmiru
+  tar -xzf Markmiru-linux-<arch>-<sha>-<yyyymmdd>.tar.gz   # 配布アーカイブの場合
+  ./Markmiru
   ```
-- 実行には **WebKitGTK ランタイム**が必要です（ビルド環境の構築で導入する開発パッケージに含まれます）。配布先の環境では対応するランタイムライブラリの導入が必要になる想定です。
-- **配布物（アーカイブ）は将来対応予定**です（現状はビルドした上記バイナリをご利用ください）。
+- 実行には **WebKitGTK 4.1 / GTK3 のランタイム**が必要です（Ubuntu などデスクトップ環境には標準搭載。ビルド環境なら開発パッケージに含まれます）。
 
 ---
 
@@ -167,16 +166,16 @@ Go・Wails CLI・git の導入は全 OS で共通です。これに加えて、O
 - **WKWebView** は macOS 標準のため追加導入は不要の想定です。
 - **PATH の通し方**: `export PATH="$HOME/go/bin:$PATH"` を `~/.zshrc` 等に追記。
 
-#### Linux 🔄
+#### Linux
 
 ディストリビューションにより必要パッケージ名は異なります。**C コンパイラ・GTK・WebKitGTK・pkg-config** を導入します。
 
 - Debian / Ubuntu 系:
   ```bash
   sudo apt update
-  sudo apt install build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.0-dev
+  sudo apt install build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
   ```
-  - `libwebkit2gtk-4.0-dev` が見つからない場合は `libwebkit2gtk-4.1-dev` を使用（ビルド時に `-tags webkit2_41` を付与）。
+  - WebKitGTK は **4.1 を推奨**します（Ubuntu 24.04 以降は 4.1 のみ提供）。4.1 環境でのビルドには `-tags webkit2_41` が必要ですが、**ビルドスクリプト（`build.sh`）は 4.1 の有無を自動判別して付与**します。4.1 が無い古い環境では `libwebkit2gtk-4.0-dev` を使用（タグ不要）。
 - Fedora 系:
   ```bash
   sudo dnf install gcc-c++ pkgconf-pkg-config gtk3-devel webkit2gtk4.1-devel
@@ -205,16 +204,16 @@ Go・Wails CLI・git の導入は全 OS で共通です。これに加えて、O
      ```powershell
      & .\scripts\build.ps1
      ```
-   - macOS / Linux（macOS は arm64 で動作確認済み / Linux は未検証 🔄）:
+   - macOS / Linux（macOS は arm64 / Linux は amd64・Ubuntu 24.04 で動作確認済み）:
      ```bash
      ./scripts/build.sh
      ```
    - このスクリプトは **git のショート SHA をバージョンとして埋め込んだ上で内部的に `wails build` を実行**します（埋め込んだ版は「ヘルプ → Markmiru について」やファイルのプロパティ＝製品バージョンで確認できます）。
-   - **バージョン埋め込みが不要なら、素の `wails build` でもビルドできます**（その場合バージョンは `dev` 表示になります）。`wails` を `PATH` に通していない場合はフルパスで呼び出します（例: Windows `& "$env:USERPROFILE\go\bin\wails.exe" build` / macOS・Linux `~/go/bin/wails build`）。
+   - **バージョン埋め込みが不要なら、素の `wails build` でもビルドできます**（その場合バージョンは `dev` 表示になります）。`wails` を `PATH` に通していない場合はフルパスで呼び出します（例: Windows `& "$env:USERPROFILE\go\bin\wails.exe" build` / macOS・Linux `~/go/bin/wails build`）。Linux で WebKitGTK 4.1 のみの環境（Ubuntu 24.04 以降）では `-tags webkit2_41` を付与してください（ビルドスクリプト経由なら自動判別）。
    - ビルドスクリプトは `wails` を**既定のインストール先の固定パス**（Windows: `%USERPROFILE%\go\bin\wails.exe` / macOS・Linux: `~/go/bin/wails`）で呼び出します（`PATH` は参照しません）。`GOPATH` / `GOBIN` を変更して別の場所にインストールしている場合は、スクリプト内の `wails` のパスを環境に合わせて修正してください。
    - Go バインディング生成・Go のコンパイルは **Wails が自動で実行**します（フロントエンドの install/build は無いため Wails は `No Install/Build command. Skipping.` と表示してスキップします）。
    - 成果物は `build/bin/` に出力されます（ファイル名は OS により異なる。後述）。
-   - 続けて**配布用アーカイブを `dist/` に出力**します（命名: `Markmiru-<platform>-<arch>-<sha>-<yyyymmdd>.zip`。`<sha>` は上記バージョンと同じ git ショート SHA、`<yyyymmdd>` は作成日）。Windows は `.exe` のみ・macOS は `.app` ごとを ZIP 化。**Linux 用アーカイブは将来対応予定**で現状は作成しません（バイナリは `build/bin/` に残ります）。配布方針は「[インストール方法](#インストール方法)」参照。
+   - 続けて**配布用アーカイブを `dist/` に出力**します（命名: `Markmiru-<platform>-<arch>-<sha>-<yyyymmdd>.zip`、Linux は `.tar.gz`。`<sha>` は上記バージョンと同じ git ショート SHA、`<yyyymmdd>` は作成日）。Windows は `.exe` のみ・macOS は `.app` ごとを ZIP 化、Linux はバイナリのみを tar.gz 化（実行権限を保持するため ZIP ではなく tar.gz）。配布方針は「[インストール方法](#インストール方法)」参照。
    - 初回ビルドは Go モジュールの取得が走るため時間がかかります（ネットワーク接続が必要）。2 回目以降はキャッシュにより短縮されます。
 
 > **`-clean` / `-debug` / `-platform` / `-tags` 等の `wails build` オプション**を使う場合は、ビルドスクリプトを介さず `wails build <オプション>` を直接実行してください（その場合バージョンは `dev`）。バージョンも埋め込みたいときは `-ldflags "-X main.version=<任意>"` を併用します。
@@ -234,11 +233,11 @@ Go・Wails CLI・git の導入は全 OS で共通です。これに加えて、O
 - 固有オプション:
   - `-platform darwin/universal` … Apple Silicon ＋ Intel のユニバーサルバイナリを生成
 
-#### Linux 🔄
+#### Linux
 
-- 成果物: **`build/bin/Markmiru`**
+- 成果物: **`build/bin/Markmiru`**（配布は `dist/` の tar.gz）
 - 固有オプション:
-  - `-tags webkit2_41` … `libwebkit2gtk-4.1-dev` を使う環境向け
+  - `-tags webkit2_41` … `libwebkit2gtk-4.1-dev` を使う環境向け（素の `wails build` 実行時のみ必要。ビルドスクリプトは自動判別）
 
 ---
 

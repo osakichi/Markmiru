@@ -57,6 +57,11 @@ func ensureSingleInstance(app *App, args []string) bool {
 		if len(data) <= ipcMaxPayload {
 			_ = conn.SetWriteDeadline(time.Now().Add(time.Second))
 			_, _ = conn.Write(data)
+			// 先発インスタンスの処理完了（接続クローズ＝EOF）を待ってから終了する。
+			// Linux のピア検証は /proc/<pid>/exe を参照するため、送信直後に exit すると
+			// 検証時点で自プロセスが消えており受け渡しが破棄される（送信成功でも開かれない）。
+			_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+			_, _ = conn.Read(make([]byte, 1))
 		}
 		return true
 	}
