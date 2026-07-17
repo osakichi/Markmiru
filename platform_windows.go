@@ -6,6 +6,8 @@ import (
 	"net"
 	"syscall"
 	"unsafe"
+
+	"github.com/wailsapp/wails/v2/pkg/options/linux"
 )
 
 var (
@@ -29,6 +31,12 @@ func verifyPeer(_ *net.UnixConn) bool { return true }
 // platformPrint は macOS 専用のネイティブ印刷実装。この OS では未処理（false）を返し、
 // 呼び出し側が Wails の WindowPrint（WebView 内で window.print() を実行）へフォールバックする。
 func platformPrint() bool { return false }
+
+// platformLinuxOptions は Linux 固有の Wails オプション（ウィンドウアイコン等）。この OS では nil。
+func platformLinuxOptions() *linux.Options { return nil }
+
+// registerDesktopIntegration は Linux 専用（.desktop / アイコンの自動登録）。この OS では何もしない。
+func registerDesktopIntegration() {}
 
 // findMainWindow はタイトル（appTitle）からメインウィンドウのハンドルを取得する。
 // 見つからない場合は ok=false を返す。

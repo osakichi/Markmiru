@@ -378,7 +378,7 @@ func TestMarkSavedKeepsDirtyWhenEditedDuringWrite(t *testing.T) {
 	st := NewState()
 	tab := st.AddTab("/d/a.md", "a.md", "A")
 	st.SetMode(tab.ID)
-	st.UpdateContent(tab.ID, "A!") // 保存対象のスナップショット
+	st.UpdateContent(tab.ID, "A!")  // 保存対象のスナップショット
 	st.UpdateContent(tab.ID, "A!!") // WriteFile 中に届いた編集（未書き込み）
 	st.MarkSaved(tab.ID, "/d/a.md", "A!")
 	if !st.IsDirty(tab.ID) {

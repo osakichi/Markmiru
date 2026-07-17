@@ -13,8 +13,8 @@ import (
 // IPC 通信のセキュリティ制限値。
 // ipcMaxPayload は ipcMaxPaths / ipcMaxPathLen を変更した場合に自動連動する。
 const (
-	ipcMaxPathLen = 4096     // 1 パスあたりの生バイト数上限（JSON デコード後。Linux PATH_MAX に準拠）
-	ipcMaxPaths   = 64       // パス数上限
+	ipcMaxPathLen = 4096 // 1 パスあたりの生バイト数上限（JSON デコード後。Linux PATH_MAX に準拠）
+	ipcMaxPaths   = 64   // パス数上限
 	// JSON エンコード後のペイロード上限。
 	// バックスラッシュは JSON で \\ に倍増するため生バイスの最悪 2 倍を確保し、
 	// 括弧・引用符・カンマ等の構造オーバーヘッド分として 1024 バイトを加算する。

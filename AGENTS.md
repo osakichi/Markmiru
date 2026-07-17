@@ -122,6 +122,7 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 
 - **Windows**: `build/windows/icon.ico` を差し替えればそのまま埋め込まれる（Wails は既存なら再生成しない。無い場合のみ `build/appicon.png` から生成）。
 - **macOS**: Wails は `.icns` を**常に `build/appicon.png` から生成**し、既製 `.icns` を読み込む口がない。そのため手作りの `build/darwin/iconfile.icns` を**ビルド後フックで .app バンドルへ上書きコピー**する方式を採用（`wails.json` の `postBuildHooks` → `darwin/*`）。フックは作業ディレクトリ `build/bin`・シェル非経由で実行されるため、コマンドは `cp ../darwin/iconfile.icns Markmiru.app/Contents/Resources/iconfile.icns`。非ネイティブ（Windows 上での darwin 指定等）では自動スキップされる。
+- **Linux**: `build/appicon.png` を Linux ビルドのみバイナリへ埋め込み（`platform_linux.go` の `//go:embed`）、2 経路で使う。①Wails の `Linux.Options`（`platformLinuxOptions`）: `Icon`（ウィンドウアイコン）と `ProgramName`（Wayland の app_id / X11 の WM_CLASS を "Markmiru" に固定）。非 nil の `Linux.Options` を渡すと `WebviewGpuPolicy` の既定が Never から Always に変わるため Never を明示している。②起動時の自動登録（`registerDesktopIntegration`）: `~/.local/share/applications/Markmiru.desktop` と `~/.local/share/icons/hicolor/512x512/apps/Markmiru.png`（`XDG_DATA_HOME` 対応・変化時のみ書き込み・失敗は無視のベストエフォート）。GNOME 等のドック・Alt+Tab・アプリ一覧のアイコンは app_id/WM_CLASS に一致する `.desktop` の `Icon` からしか解決されない（特に Wayland はウィンドウ自体にアイコンを載せる仕組みが無い）ため、バイナリ単体配布（tar.gz）のままアイコンを出すにはこの自動登録が必要。hicolor テーマが認識する最大サイズディレクトリは 512x512（1024 は index.theme に無く無視される）。
 
 ## バージョン番号
 

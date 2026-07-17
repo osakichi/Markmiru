@@ -98,7 +98,7 @@ type shellVM struct {
 
 	// 設定パネル
 	SettingsOpen    bool
-	Styles          []optionVM // スタイル選択プルダウンの選択肢（Value=ID / Label=表示名）
+	Styles          []optionVM  // スタイル選択プルダウンの選択肢（Value=ID / Label=表示名）
 	ActiveStyle     style.Style // 編集フィールドの現在値
 	ActiveEditable  bool        // アクティブが編集可能（非 builtin）か
 	FontOptions     []style.FontOption
@@ -377,16 +377,16 @@ func (s *Server) serveShell(w http.ResponseWriter, _ *http.Request) {
 		dlg = &dialogVM{Kind: "missing-file", Path: mp} // 不在ファイル確認を優先
 	}
 	vm := shellVM{
-		Title:          "Markmiru",
-		Tabs:           s.state.TabVMs(),
-		Content:        content,
-		StyleVars:      template.CSS(style.CSS(st)),
-		CodeCSS:        template.CSS(render.HighlightCSS(st.ColorScheme)),
-		Scheme:      st.ColorScheme,
-		Dialog:      dlg,
-		SidebarOpen: s.state.SidebarOpen(),
-		CustomCSS:      template.CSS(st.CustomCSS),
-		PrintCodeCSS:   template.CSS(render.HighlightCSS("light")),
+		Title:        "Markmiru",
+		Tabs:         s.state.TabVMs(),
+		Content:      content,
+		StyleVars:    template.CSS(style.CSS(st)),
+		CodeCSS:      template.CSS(render.HighlightCSS(st.ColorScheme)),
+		Scheme:       st.ColorScheme,
+		Dialog:       dlg,
+		SidebarOpen:  s.state.SidebarOpen(),
+		CustomCSS:    template.CSS(st.CustomCSS),
+		PrintCodeCSS: template.CSS(render.HighlightCSS("light")),
 	}
 	s.settingsFields(&vm)
 	htmlHeader(w)

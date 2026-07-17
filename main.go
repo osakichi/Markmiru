@@ -157,7 +157,7 @@ func (h webHost) ImportStyleDialog() (string, error)            { return h.app.I
 func (h webHost) SetEditMenuEnabled(canEdit bool)   { h.app.SetEditMenuEnabled(canEdit) }
 func (h webHost) SetSaveMenuEnabled(canSave bool)   { h.app.SetSaveMenuEnabled(canSave) }
 func (h webHost) SetModeMenuEnabled(canToggle bool) { h.app.SetModeMenuEnabled(canToggle) }
-func (h webHost) Quit()                           { h.app.Quit() }
+func (h webHost) Quit()                             { h.app.Quit() }
 
 func (h webHost) OpenURL(url string) { h.app.OpenExternalURL(url) }
 
@@ -178,6 +178,10 @@ func main() {
 		os.Exit(0)
 	}
 	app.startupFiles = args
+
+	// Linux: シェル（GNOME 等）がドック・Alt+Tab・アプリ一覧のアイコンを解決できるよう、
+	// ~/.local/share 配下へ .desktop とアイコンを自動登録する（他 OS は no-op）。
+	registerDesktopIntegration()
 
 	configDir, _ := os.UserConfigDir()
 
@@ -282,6 +286,9 @@ func main() {
 		Windows: &wailswindows.Options{
 			WebviewUserDataPath: filepath.Join(configDir, "Markmiru", "cache"),
 		},
+		// Linux 固有オプション（ウィンドウアイコン・ProgramName・GPU ポリシー維持）。
+		// 他 OS では nil（Wails は自 OS 以外のオプションを無視する）。
+		Linux: platformLinuxOptions(),
 	})
 
 	if err != nil {

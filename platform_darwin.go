@@ -93,6 +93,7 @@ import (
 	"net"
 	"os"
 
+	"github.com/wailsapp/wails/v2/pkg/options/linux"
 	"golang.org/x/sys/unix"
 )
 
@@ -114,6 +115,12 @@ func setSocketPerms(path string) {
 func platformGrantForeground() {}
 func activateWindowWin32()     {}
 func focusWebview()            {}
+
+// platformLinuxOptions は Linux 固有の Wails オプション（ウィンドウアイコン等）。この OS では nil。
+func platformLinuxOptions() *linux.Options { return nil }
+
+// registerDesktopIntegration は Linux 専用（.desktop / アイコンの自動登録）。この OS では何もしない。
+func registerDesktopIntegration() {}
 
 // verifyPeer は接続元プロセスの実効 UID（EUID）を自プロセスと照合する。
 // macOS では AF_UNIX 経由でピアの実行ファイルパスを cgo なしで取得することが困難なため、
