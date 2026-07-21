@@ -173,7 +173,16 @@ func main() {
 	app := NewApp()
 
 	// 多重起動防止 + IPC。既存インスタンスへファイルを渡して終了する場合がある。
-	args := os.Args[1:]
+	// 引数のパスは送信前にここで絶対化する——受け取る既存インスタンスはカレント
+	// ディレクトリが異なる（ドック起動なら $HOME 等）ため、相対パスのままでは
+	// 解決できず、受け渡したファイルが無言で開かれない。
+	args := make([]string, 0, len(os.Args)-1)
+	for _, p := range os.Args[1:] {
+		if abs, err := filepath.Abs(p); err == nil {
+			p = abs
+		}
+		args = append(args, p)
+	}
 	if ensureSingleInstance(app, args) {
 		os.Exit(0)
 	}

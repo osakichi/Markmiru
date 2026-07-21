@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/wailsapp/wails/v2/pkg/options/linux"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"golang.org/x/sys/unix"
 )
 
@@ -107,15 +108,19 @@ func desktopExecQuote(path string) string {
 // isMacOS は macOS 固有のメニュー構成（標準アプリメニューの付与等）を切り替えるための定数。
 const isMacOS = false
 
-// setSocketPerms はソケットファイルを所有者専用に制限する。
-// 0600: ファイル権限によるユーザー分離（ディレクトリの 0700 と合わせた二重防御）。
-func setSocketPerms(path string) {
-	_ = os.Chmod(path, 0o600)
-}
-
 func platformGrantForeground() {}
-func activateWindowWin32()     {}
 func focusWebview()            {}
+
+// platformRaiseWindow は既に表示中のウィンドウを前面へ出す（IPC 受信時の bringToFront から呼ぶ）。
+// Wails の WindowShow は Linux では gtk_widget_show のため既表示ウィンドウの前面化効果が無く、
+// gtk_window_present を呼ぶ WindowUnminimise を使う（最小化解除＋前面化・フォーカス要求）。
+// 【既知の制約】Wayland ではコンポジタのフォーカス奪取防止により即時前面化されない場合があり、
+// その際はドックのアイコン強調（注目表示）となる（コンポジタ側の仕様で、アプリからは制御不可）。
+func platformRaiseWindow(a *App) {
+	if a.ctx != nil {
+		runtime.WindowUnminimise(a.ctx)
+	}
+}
 
 // platformPrint は macOS 専用のネイティブ印刷実装。この OS では未処理（false）を返し、
 // 呼び出し側が Wails の WindowPrint（WebView 内で window.print() を実行）へフォールバックする。
@@ -155,5 +160,12 @@ func verifyPeer(conn *net.UnixConn) bool {
 	if err != nil {
 		return false
 	}
+	// 実行中にバイナリファイルが置き換えられると（再ビルド等）、/proc/<pid>/exe の
+	// リンク先は「<path> (deleted)」になりパス比較が常に不一致→受け渡しが無言で失敗する。
+	// 接尾辞を除いて同一パスの新旧バイナリ間の受け渡しを許容する（そのパスへ配置できるのは
+	// 同一ユーザーだけなので、検証の趣旨〔別プログラムの排除〕は保たれる）。
+	const deletedSuffix = " (deleted)"
+	selfExe = strings.TrimSuffix(selfExe, deletedSuffix)
+	peerExe = strings.TrimSuffix(peerExe, deletedSuffix)
 	return filepath.Clean(selfExe) == filepath.Clean(peerExe)
 }

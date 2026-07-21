@@ -25,7 +25,6 @@ const wmSetFocus = 0x0007 // WM_SETFOCUS
 // isMacOS は macOS 固有のメニュー構成（標準アプリメニューの付与等）を切り替えるための定数。
 const isMacOS = false
 
-func setSocketPerms(_ string)         {}
 func verifyPeer(_ *net.UnixConn) bool { return true }
 
 // platformPrint は macOS 専用のネイティブ印刷実装。この OS では未処理（false）を返し、
@@ -65,9 +64,9 @@ func platformGrantForeground() {
 	procAllowSetForegroundWindow.Call(uintptr(pid))
 }
 
-// activateWindowWin32 は先発インスタンスがウィンドウを前面に出すために呼ぶ。
-// AllowSetForegroundWindow で許可を受けた後に呼ぶことで SetForegroundWindow が成功する。
-func activateWindowWin32() {
+// platformRaiseWindow は先発インスタンスがウィンドウを前面に出すために呼ぶ（IPC 受信時）。
+// 後発の AllowSetForegroundWindow で許可を受けた後に呼ぶことで SetForegroundWindow が成功する。
+func platformRaiseWindow(_ *App) {
 	hwnd, ok := findMainWindow()
 	if !ok {
 		return

@@ -72,7 +72,10 @@ func ensureSingleInstance(app *App, args []string) bool {
 	if err != nil {
 		return false
 	}
-	setSocketPerms(socketPath) // プラットフォーム固有の権限設定（Unix: 0600, Windows: no-op）
+	// ソケットファイルを所有者専用 0600 に制限する（ディレクトリの 0700 と合わせた二重防御）。
+	// Windows の os.Chmod は読み取り専用属性の操作のみで 0600 指定は実質 no-op のため
+	// 無条件に呼んで問題ない（Windows の保護は %LocalAppData% の ACL に依る）。
+	_ = os.Chmod(socketPath, 0o600)
 
 	go func() {
 		defer ln.Close()

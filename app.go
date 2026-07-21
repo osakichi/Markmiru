@@ -64,14 +64,16 @@ func (a *App) openFileFromIPC(path string) {
 }
 
 // bringToFront はウィンドウを前面に表示する。IPC 受信時に呼ぶ。
-// runtime.WindowShow で表示状態を復元した後、Windows では Win32 の
-// SetForegroundWindow を呼ぶことでフォアグラウンドロックを越えて前面に出す。
+// runtime.WindowShow で表示状態を復元した後、platformRaiseWindow が OS 固有の前面化を行う——
+// Windows は Win32 の SetForegroundWindow でフォアグラウンドロックを越えて前面に出し、
+// Linux は gtk_window_present で前面化する（WindowShow は Linux では gtk_widget_show のため、
+// 既に表示中のウィンドウを前面に出す効果が無い）。macOS は WindowShow が前面化まで行う。
 func (a *App) bringToFront() {
 	if a.ctx == nil {
 		return
 	}
 	runtime.WindowShow(a.ctx)
-	activateWindowWin32() // Windows: SetForegroundWindow; 他 OS: no-op
+	platformRaiseWindow(a)
 }
 
 // emit はネイティブメニュー等からフロントへイベントを送る内部ヘルパ。

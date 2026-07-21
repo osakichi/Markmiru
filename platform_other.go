@@ -13,10 +13,8 @@ import (
 // isMacOS は macOS 固有のメニュー構成（標準アプリメニューの付与等）を切り替えるための定数。
 const isMacOS = false
 
-func setSocketPerms(_ string)         {}
 func verifyPeer(_ *net.UnixConn) bool { return true }
 func platformGrantForeground()        {}
-func activateWindowWin32()            {}
 func focusWebview()                   {}
 
 // platformLinuxOptions は Linux 固有の Wails オプション（ウィンドウアイコン等）。この OS では nil。
@@ -24,6 +22,9 @@ func platformLinuxOptions() *linux.Options { return nil }
 
 // registerDesktopIntegration は Linux 専用（.desktop / アイコンの自動登録）。この OS では何もしない。
 func registerDesktopIntegration() {}
+
+// platformRaiseWindow は Windows / Linux 専用（IPC 受信時の前面化）。この OS では何もしない。
+func platformRaiseWindow(_ *App) {}
 
 // platformPrint は macOS 専用のネイティブ印刷実装。この OS では未処理（false）を返し、
 // 呼び出し側が Wails の WindowPrint（WebView 内で window.print() を実行）へフォールバックする。

@@ -107,13 +107,7 @@ func platformPrint() bool {
 	return bool(C.mmPrintWebView())
 }
 
-// setSocketPerms はソケットファイルを所有者専用に制限する。
-func setSocketPerms(path string) {
-	_ = os.Chmod(path, 0o600)
-}
-
 func platformGrantForeground() {}
-func activateWindowWin32()     {}
 func focusWebview()            {}
 
 // platformLinuxOptions は Linux 固有の Wails オプション（ウィンドウアイコン等）。この OS では nil。
@@ -121,6 +115,10 @@ func platformLinuxOptions() *linux.Options { return nil }
 
 // registerDesktopIntegration は Linux 専用（.desktop / アイコンの自動登録）。この OS では何もしない。
 func registerDesktopIntegration() {}
+
+// platformRaiseWindow は Windows / Linux 専用（IPC 受信時の前面化）。この OS では何もしない
+// （macOS は WindowShow が前面化まで行う）。
+func platformRaiseWindow(_ *App) {}
 
 // verifyPeer は接続元プロセスの実効 UID（EUID）を自プロセスと照合する。
 // macOS では AF_UNIX 経由でピアの実行ファイルパスを cgo なしで取得することが困難なため、
