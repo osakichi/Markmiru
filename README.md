@@ -215,7 +215,7 @@ Go・Wails CLI・git の導入は全 OS で共通です。これに加えて、O
    - このスクリプトは **git のショート SHA をバージョンとして埋め込んだ上で内部的に `wails build` を実行**します（埋め込んだ版は「ヘルプ → Markmiru について」やファイルのプロパティ＝製品バージョンで確認できます）。
    - **バージョン埋め込みが不要なら、素の `wails build` でもビルドできます**（その場合バージョンは `dev` 表示になります）。`wails` を `PATH` に通していない場合はフルパスで呼び出します（例: Windows `& "$env:USERPROFILE\go\bin\wails.exe" build` / macOS・Linux `~/go/bin/wails build`）。Linux で WebKitGTK 4.1 のみの環境（Ubuntu 24.04 以降）では `-tags webkit2_41` を付与してください（ビルドスクリプト経由なら自動判別）。
    - ビルドスクリプトは `wails` を**既定のインストール先の固定パス**（Windows: `%USERPROFILE%\go\bin\wails.exe` / macOS・Linux: `~/go/bin/wails`）で呼び出します（`PATH` は参照しません）。`GOPATH` / `GOBIN` を変更して別の場所にインストールしている場合は、スクリプト内の `wails` のパスを環境に合わせて修正してください。
-   - Go バインディング生成・Go のコンパイルは **Wails が自動で実行**します（フロントエンドの install/build は無いため Wails は `No Install/Build command. Skipping.` と表示してスキップします）。
+   - Go バインディング生成・Go のコンパイルは **Wails が自動で実行**します（フロントエンドの install/build は無いため Wails は `No Install command. Skipping.` / `No Build command. Skipping.` と表示してスキップします）。
    - 成果物は `build/bin/` に出力されます（ファイル名は OS により異なる。後述）。
    - 続けて**配布用アーカイブを `dist/` に出力**します（命名: `Markmiru-<platform>-<arch>-<sha>-<yyyymmdd>.zip`、Linux は `.tar.gz`。`<sha>` は上記バージョンと同じ git ショート SHA、`<yyyymmdd>` は作成日）。Windows は `.exe` のみ・macOS は `.app` ごとを ZIP 化、Linux はバイナリのみを tar.gz 化（実行権限を保持するため ZIP ではなく tar.gz）。配布方針は「[インストール方法](#インストール方法)」参照。
    - 初回ビルドは Go モジュールの取得が走るため時間がかかります（ネットワーク接続が必要）。2 回目以降はキャッシュにより短縮されます。

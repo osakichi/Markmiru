@@ -131,7 +131,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-(Chroma bundles github.com/dlclark/regexp2, MIT License.)
+(Chroma depends on github.com/dlclark/regexp2/v2, MIT License.)
 
 ---
 
@@ -166,8 +166,8 @@ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-(bluemonday bundles github.com/aymerick/douceur and github.com/gorilla/css,
-both BSD-2/BSD-3 licensed.)
+(bluemonday depends on github.com/aymerick/douceur, MIT License, and
+github.com/gorilla/css, BSD 3-Clause License.)
 
 ---
 
@@ -204,9 +204,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## htmx
 
-Copyright (c) 2020 by Big Sky Software LLC
-
 Zero-Clause BSD (0BSD)
+
+(The upstream htmx LICENSE file contains no copyright notice line; 0BSD does
+not require one.)
 
 Permission to use, copy, modify, and/or distribute this software for any
 purpose with or without fee is hereby granted.
@@ -249,9 +250,12 @@ SOFTWARE.
 
 ## Noto Sans JP / Noto Serif JP / Noto Sans Mono
 
-Noto Sans JP — Copyright 2014 Google Inc.
-Noto Serif JP — Copyright 2014 Google Inc.
+Noto Sans JP — Copyright Google Inc.
+Noto Serif JP — Copyright Google Inc.
 Noto Sans Mono — Copyright 2022 The Noto Project Authors (https://github.com/notofonts/latin-greek-cyrillic)
+
+(Copyright statements as included in the vendored @fontsource package LICENSE
+files.)
 
 SIL Open Font License, Version 1.1
 

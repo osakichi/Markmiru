@@ -55,7 +55,7 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 
 - **モードは閲覧（`view`）重視。** セッション復元時は終了時のモードに関わらず常に閲覧モードで開く（終了時のモードは保存しない）。編集モードは**透明 `<textarea>` に chroma ハイライト層を重ねるオーバーレイ**（CodeMirror ではない）。
 - **セキュリティ防御**：bluemonday でサニタイズ、**CSP をミドルウェア（`web.NewHandler`）で全レスポンスに注入**（`default-src 'none'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http: https:; font-src 'self' data:; connect-src 'self'; …`。`unsafe-eval` は mermaid/htmx の Function 用）。外部リンクはクリック時に確認ダイアログを挟み `OpenExternalURL`（`BrowserOpenURL`）で OS ブラウザへ委譲。外部画像はファイルごとに表示可否を確認。ローカル画像は `render` パッケージが data URI 化（相対・絶対・ルート相対パス対応）。
-- **メニュー処理の OS 分担**：macOS は `menu.EditMenu()` のネイティブ標準編集メニュー（ラベルは英語固定の既知制約）。Windows / Linux は日本語ラベルで手組みし、編集専用項目は閲覧モードで非活性化する。「ファイル → 保存」は dirty または無題のときだけ有効（全 OS）。**有効/無効はサーバ主導**：`web` のミドルウェア（`withMenuSync`）が各 POST 後に状態から一括判定し、変化時だけ `Host.SetEditMenuEnabled` / `SetSaveMenuEnabled` を呼ぶ（フロント通知ではない）。
+- **メニュー処理の OS 分担**：macOS は `menu.EditMenu()` のネイティブ標準編集メニュー（ラベルは英語固定の既知制約）。Windows / Linux は日本語ラベルで手組みし、編集専用項目は閲覧モードで非活性化する。「ファイル → 保存」は dirty または無題のときだけ有効（全 OS）。**有効/無効はサーバ主導**：`web` のミドルウェア（`withMenuSync`）が各 POST の処理後（＋起動時のシェル描画 GET /）に状態から一括判定し、変化時だけ `Host.SetEditMenuEnabled` / `SetSaveMenuEnabled` / `SetModeMenuEnabled` を呼ぶ（フロント通知ではない）。
 
 ## 要件と優先度
 
@@ -98,7 +98,7 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 | セキュリティ | **CSP**（ミドルウェアで全レスポンスに注入） | `default-src 'none'; script-src 'self' 'unsafe-eval'; …`。外部リンクは確認ダイアログ後 `BrowserOpenURL` |
 | PDF 出力 | OS / WebView の印刷 → PDF | 専用ライブラリ不要 |
 | スタイル変更 | Go 生成の CSS 変数（テーマ切替） | 設定はモーダルで GUI 編集。JSON 入出力はメニュー「ファイル → スタイル」 |
-| 同梱フォント | **Noto Sans/Serif/Mono JP**（woff2 を直 vendor） | `web/assets/fonts/` に vendoring 済み |
+| 同梱フォント | **Noto Sans JP / Noto Serif JP / Noto Sans Mono**（woff2 を直 vendor。等幅はラテン専用で日本語は Noto Sans JP へフォールバック） | `web/assets/fonts/` に vendoring 済み |
 | マルチタブ | Go 状態（`web/state.go`） | 1ウィンドウ内のタブバーで管理 |
 
 ## 選定理由（要約）
@@ -110,7 +110,7 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 
 ## 残タスク
 
-- 各設計ドキュメント（`docs/`）の Go-SSR 構成への追随（順次更新）。
+- なし（`docs/` の Go-SSR 構成への追随は完了。将来フェーズの候補は `docs/アーキテクチャ・画面設計.md` §10「未着手（将来フェーズ）」を参照）。
 
 ## 埋め込みドキュメント（ヘルプメニュー）
 
@@ -136,7 +136,7 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 
 ## ビルドツールチェーン（Go のみ）
 
-- 本アプリは Go-SSR（Wails `AssetServer.Handler`）で、**ビルドすべきフロントエンドは無い**（`wails.json` にフロントフックは無く、`wails build` は "No Install/Build command. Skipping." で Go のみをコンパイルする。`frontend/wailsjs` は `wails build` が再生成するバインディングで `.gitignore` により git 管理外）。
+- 本アプリは Go-SSR（Wails `AssetServer.Handler`）で、**ビルドすべきフロントエンドは無い**（`wails.json` にフロントフックは無く、`wails build` は "No Install command. Skipping." / "No Build command. Skipping." と表示して Go のみをコンパイルする。`frontend/wailsjs` は `wails build` が再生成するバインディングで `.gitignore` により git 管理外）。
 - 必要なのは **Go（`go.mod` の `go 1.25`）・Wails CLI v2・git** のみ。`scripts/build.ps1` / `scripts/build.sh` は git SHA を埋め込み `wails build` を実行して `dist/` に ZIP を出力する。**両スクリプトは版取得に `git rev-parse` / `git status` を使うため、git リポジトリの作業ツリー内で実行する必要がある**（非 git 環境では SHA 取得に失敗して停止。版を埋め込まない素の `wails build`〔版は `dev`〕は非 git でも可）。
 - **macOS は SDK 11 以上が必須**: Wails v2 の `WailsContext.m` が macOS 11 で追加された通知定数（`UNNotificationPresentationOptionList` / `Banner`）を参照するため、Command Line Tools の SDK が 10.15 以前だと undeclared identifier でコンパイル失敗する（`@available` は実行時チェックのみでコンパイルは通らない）。`xcrun --show-sdk-version` で確認し、古ければ CLT を入れ直す（2026-07 に古い Intel Mac で発生・CLT 再インストールで解消済み）。
 - **ビルドスクリプトは `wails` を固定パスで参照する**（`build.ps1`＝`%USERPROFILE%\go\bin\wails.exe` / `build.sh`＝`$HOME/go/bin/wails`。`PATH` は参照しない）。`GOPATH` / `GOBIN` を変更した環境ではそのままでは動かないため、スクリプト内のパスを環境に合わせる必要がある。
