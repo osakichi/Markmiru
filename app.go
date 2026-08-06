@@ -134,6 +134,17 @@ func (a *App) OpenExternalURL(url string) {
 	}
 }
 
+// ClipboardText は OS のクリップボードのテキストを返す（右クリック／編集メニューの「貼り付け」用）。
+// Chromium 系 WebView は script からのクリップボード読み取りを禁止しており
+// （`document.execCommand('paste')` は無効、`navigator.clipboard.readText()` は権限要求になる）、
+// WebView 側だけでは貼り付けを実装できないため Go 側で読む。Ctrl+V は WebView が自前で処理する。
+func (a *App) ClipboardText() (string, error) {
+	if a.ctx == nil {
+		return "", nil
+	}
+	return runtime.ClipboardGetText(a.ctx)
+}
+
 // FocusWindow は WebView にキーボードフォーカスを与える。
 // Windows の WebView2 は起動直後クリックするまでキー入力が届かないため、
 // アプリ内ダイアログ表示時にフロントから呼ぶ（他 OS は no-op）。

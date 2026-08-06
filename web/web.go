@@ -180,6 +180,9 @@ type Host interface {
 	ReadFile(path string) (name, content string, ok bool)
 	// OpenURL は URL を OS の既定ブラウザ／メーラで開く（外部リンク確認後）。
 	OpenURL(url string)
+	// ClipboardText は OS のクリップボードのテキストを返す（「貼り付け」用）。
+	// WebView は script からのクリップボード読み取りを禁止するため Go 側で読む。
+	ClipboardText() (string, error)
 }
 
 // Server は状態を保持し HTTP ハンドラを束ねる。
@@ -230,6 +233,8 @@ func NewHandler(state *State, host Host) http.Handler {
 	mux.HandleFunc("POST /tabs/{id}/remote-images", s.serveRemoteImages)
 	mux.HandleFunc("POST /sidebar/toggle", s.serveSidebarToggle)
 	mux.HandleFunc("POST /find/open", s.serveFindOpen)
+	mux.HandleFunc("POST /ctxmenu/open", s.serveCtxMenuOpen)
+	mux.HandleFunc("POST /clipboard/read", s.serveClipboardRead)
 	mux.HandleFunc("POST /quit/request", s.serveQuitRequest)
 	mux.HandleFunc("POST /quit/step", s.serveQuitStep)
 	mux.HandleFunc("POST /missing/retry", s.serveMissingRetry)
@@ -673,6 +678,58 @@ func (s *Server) continueQuit(w http.ResponseWriter) {
 func (s *Server) serveFindOpen(w http.ResponseWriter, _ *http.Request) {
 	htmlHeader(w)
 	_ = shellTmpl.ExecuteTemplate(w, "find-bar", nil)
+}
+
+// ctxMenuVM は右クリックメニュー断片（ctxmenu）の描画パラメータ。
+// 項目の並びは常に同一で、これらは各項目の活性・非活性だけを決める。
+type ctxMenuVM struct {
+	Edit         bool   // 編集モードか（取り消し/やり直し/切り取り/貼り付けの活性）
+	HasSelection bool   // 選択があるか（切り取り/コピーの活性）
+	CanUndo      bool   // 取り消せる編集が残っているか（取り消し履歴の残量。クライアント判定）
+	CanRedo      bool   // やり直せる編集が残っているか（同上）
+	LinkURL      string // 右クリック位置のリンク URL（外部スキームのみ。空ならリンク項目は非活性）
+}
+
+// serveCtxMenuOpen は右クリックメニューの断片を返す（#ctxmenu-host に注入。位置決め・
+// アクション実行・クローズは glue.js が担う）。**項目は常に同一の並びで出し、状況に応じて
+// 使えないものを非活性にする**（メニューの内容が状況で変わらないようにするため）。活性判定は
+// アクティブタブのモード（サーバの状態）と、選択の有無・取り消し履歴の残量・リンク URL
+// （いずれもサーバからは見えないためクライアントから受け取る）で行う。
+// リンク URL は外部スキーム（http/https/mailto）のみ許可し、それ以外はリンク項目を非活性にする
+// （開く操作自体も既存の /link/confirm → /link/open で再検証される多層防御）。
+func (s *Server) serveCtxMenuOpen(w http.ResponseWriter, r *http.Request) {
+	mode, _ := s.state.ActiveMeta()
+	link := r.FormValue("link")
+	if !isExternalURL(link) {
+		link = ""
+	}
+	vm := ctxMenuVM{
+		Edit:         mode == "source",
+		HasSelection: r.FormValue("sel") == "1",
+		CanUndo:      r.FormValue("undo") == "1",
+		CanRedo:      r.FormValue("redo") == "1",
+		LinkURL:      link,
+	}
+	htmlHeader(w)
+	_ = shellTmpl.ExecuteTemplate(w, "ctxmenu", vm)
+}
+
+// serveClipboardRead は OS のクリップボードのテキストを text/plain で返す（「貼り付け」用）。
+// Chromium 系 WebView は script からのクリップボード読み取りを禁止するため、glue はこの
+// エンドポイントで本文を受け取り、編集中の textarea へ挿入する（§5.10）。HTML 断片ではなく
+// DOM を差し替えないので htmx は経由せず、glue が XHR で直接呼ぶ。
+func (s *Server) serveClipboardRead(w http.ResponseWriter, _ *http.Request) {
+	if s.host == nil {
+		http.Error(w, "clipboard unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	text, err := s.host.ClipboardText()
+	if err != nil {
+		http.Error(w, "clipboard unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = w.Write([]byte(text))
 }
 
 // shellOOBVM はタブバー/サイドバー（navkeep・sidebar 断片）の描画に必要な最小 VM を返す。

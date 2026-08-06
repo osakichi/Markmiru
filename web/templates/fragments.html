@@ -159,6 +159,28 @@
   <button type="button" class="find-close" data-find-close title="閉じる (Esc)">✕</button>
 </div>{{end}}
 
+{{/* 右クリックメニュー（#ctxmenu-host に注入。ctxMenuVM）。位置は glue が設定するまで
+     CSS の visibility:hidden で隠す（左上での一瞬のチラつき防止）。
+     項目の並びは常に同一で、使えないものは disabled（グレーアウト）にする——閲覧モードでは
+     取り消し/やり直し/切り取り/貼り付けが、取り消し履歴を使い切っていれば取り消し/やり直しが、
+     選択が無ければ切り取り/コピーが、リンク上でなければリンク 2 項目が非活性。編集操作は
+     data-ctx-cmd（glue の editExec＝ネイティブメニューと同じ実装）、リンク操作は
+     data-ctx-link-open（既存の /link/confirm フローへ）/
+     data-ctx-link-copy（glue がコピー）。 */}}
+{{define "ctxmenu"}}<div class="ctxmenu" role="menu">
+<button type="button" class="ctxmenu-item" role="menuitem" data-ctx-cmd="undo"{{if not (and .Edit .CanUndo)}} disabled{{end}}>元に戻す</button>
+<button type="button" class="ctxmenu-item" role="menuitem" data-ctx-cmd="redo"{{if not (and .Edit .CanRedo)}} disabled{{end}}>やり直し</button>
+<hr class="ctxmenu-sep">
+<button type="button" class="ctxmenu-item" role="menuitem" data-ctx-cmd="cut"{{if not (and .Edit .HasSelection)}} disabled{{end}}>切り取り</button>
+<button type="button" class="ctxmenu-item" role="menuitem" data-ctx-cmd="copy"{{if not .HasSelection}} disabled{{end}}>コピー</button>
+<button type="button" class="ctxmenu-item" role="menuitem" data-ctx-cmd="paste"{{if not .Edit}} disabled{{end}}>貼り付け</button>
+<hr class="ctxmenu-sep">
+<button type="button" class="ctxmenu-item" role="menuitem" data-ctx-cmd="selectAll">すべて選択</button>
+<hr class="ctxmenu-sep">
+<button type="button" class="ctxmenu-item" role="menuitem" data-ctx-link-open="{{.LinkURL}}"{{if not .LinkURL}} disabled{{end}}>リンクを開く...</button>
+<button type="button" class="ctxmenu-item" role="menuitem" data-ctx-link-copy="{{.LinkURL}}"{{if not .LinkURL}} disabled{{end}}>リンクの URL をコピー</button>
+</div>{{end}}
+
 {{/* 外部画像の確認ダイアログ（.TabID / .FileName）。許可で再描画、拒否で遮断のまま。 */}}
 {{define "dialog-remote"}}<div class="mm-backdrop"><div class="mm-dialog" role="dialog" aria-modal="true">
   <p class="mm-dialog-msg">「{{.FileName}}」に外部画像が含まれています。読み込みますか？</p>

@@ -9,6 +9,7 @@
 //   6. ページ内検索（Ctrl+F）: 可視テキスト層の走査＋CSS Custom Highlight API
 //   7. 外部リンクの遷移制御（WebView 遷移防止・確認ダイアログ・OS ブラウザ委譲）
 //   8. 設定パネルの対入力同期（スライダー↔数値 / カラー↔HEX）
+//   9. 右クリックメニュー（本文のみ。サーバ断片の注入・位置決め・アクション実行・クローズ）
 //
 // 設計: docs/アーキテクチャ・画面設計.md §1.2, §4.2, §4.4。CSP（script-src 'self'）下で動くよう外部ファイルに集約。
 // Wails ランタイム（window.runtime / window.go）はシェル（ルート /）にのみ注入される。
@@ -108,7 +109,12 @@
       return
     }
     if (e.key !== 'Escape') return
-    // Esc の優先順位: 確認ダイアログ拒否 → 設定モーダル → 検索バー。
+    // Esc の優先順位: 右クリックメニュー → 確認ダイアログ拒否 → 設定モーダル → 検索バー。
+    if (ctxMenu()) {
+      e.preventDefault()
+      closeCtxMenu()
+      return
+    }
     var dlg = activeDialog()
     if (dlg) {
       var reject = dlg.querySelector('[data-dialog-reject]')
@@ -234,10 +240,14 @@
         ta.select()
         return
       }
+      if (cmd === 'paste') {
+        pasteFromClipboard(ta)
+        return
+      }
       try {
         document.execCommand(cmd)
       } catch (e) {
-        /* paste 等は環境により不可。キーボードでは標準動作する。 */
+        /* 実行不可の環境は無視。キーボードでは標準動作する。 */
       }
       return
     }
@@ -252,6 +262,34 @@
       }
     }
   }
+  // 「貼り付け」。Chromium 系 WebView は script からのクリップボード読み取りを禁止しており
+  // （execCommand('paste') は無効、navigator.clipboard.readText() は権限要求）、WebView 側だけでは
+  // 実装できない。そこで OS のクリップボードは Go 側（POST /clipboard/read → Host.ClipboardText）
+  // から受け取り、挿入は execCommand('insertText') で行う——この経路ならネイティブの取り消し履歴に
+  // 載り、htmx が待つ input イベントも発火する（＝編集がサーバへ送られ dirty になる）。
+  // Ctrl+V は WebView が自前で処理するためここは通らない。
+  // 通信に fetch ではなく XHR を使うのは、htmx が全 OS で実証済みの経路に揃えるため
+  //（アセットは macOS＝WKURLSchemeHandler / Linux＝WebKit の URI スキームハンドラ経由という
+  // 特殊な配信で、glue が持ち込む通信手段を増やしたくない）。
+  function pasteFromClipboard(ta) {
+    var xhr = new XMLHttpRequest()
+    xhr.open('POST', '/clipboard/read')
+    xhr.onload = function () {
+      if (xhr.status < 200 || xhr.status >= 300) return // 取得不可は無視（Ctrl+V は標準動作する）
+      var text = xhr.responseText
+      if (!text) return
+      ta.focus()
+      if (document.execCommand('insertText', false, text)) return
+      // insertText が使えない環境: 選択範囲を直接置換し input を自前で発火する（取り消しは効かない）。
+      ta.setRangeText(text, ta.selectionStart, ta.selectionEnd, 'end')
+      ta.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    xhr.onerror = function () {
+      /* クリップボード取得不可は無視。 */
+    }
+    xhr.send()
+  }
+
   var R = window.runtime
   if (R && R.EventsOn) {
     R.EventsOn('menu:new', function () { ajax('POST', '/tabs/new', '#content') })
@@ -544,4 +582,149 @@
       if (inputs[i] !== el && inputs[i].value !== el.value) inputs[i].value = el.value
     }
   })
+
+  // --- 9. 右クリックメニュー ---------------------------------------------
+  // 本文（#content）内の contextmenu を横取りし、サーバ断片（POST /ctxmenu/open）を
+  // #ctxmenu-host に注入する。項目の並びは常に同一でサーバが活性・非活性だけを決め、
+  // 選択の有無とリンク URL はここで収集して渡す。編集操作はネイティブメニューと同じ editExec、
+  // 「リンクを開く...」は既存のリンククリックと同じ /link/confirm フローに合流する。
+  function ctxMenu() {
+    return document.querySelector('#ctxmenu-host .ctxmenu')
+  }
+  function closeCtxMenu() {
+    var host = document.getElementById('ctxmenu-host')
+    if (host && host.firstChild) host.innerHTML = ''
+  }
+  // 取り消し／やり直しの残量を問い合わせる（メニュー項目の活性判定用）。textarea はネイティブの
+  // 取り消し履歴を使っており、その残量を知る手段は queryCommandEnabled しかない（自前スタックを
+  // 持つと Ctrl+Z の標準動作と二重管理になる）。非推奨 API のため未対応環境では例外や false に
+  // なり得るので、その場合は「可能」として扱い項目を活性のままにする——押しても何も起きないだけで、
+  // 実際には使える操作を誤って塞がないことを優先する。
+  function canEditCmd(cmd) {
+    if (!document.queryCommandEnabled) return true
+    try {
+      return document.queryCommandEnabled(cmd)
+    } catch (e) {
+      return true
+    }
+  }
+  // 現在のモードで本文に選択があるか（編集＝textarea の選択 / 閲覧＝ウィンドウの選択）。
+  function hasContentSelection() {
+    var ta = document.querySelector('.editor-input')
+    if (ta) return ta.selectionStart !== ta.selectionEnd
+    var sel = window.getSelection && window.getSelection()
+    return !!sel && !sel.isCollapsed
+  }
+  document.addEventListener('contextmenu', function (e) {
+    var content = document.getElementById('content')
+    if (!content || !content.contains(e.target)) {
+      closeCtxMenu() // 本文の外は既定動作のまま（メニューだけ閉じる）
+      return
+    }
+    e.preventDefault()
+    var x = e.clientX
+    var y = e.clientY
+    var hasSel = hasContentSelection()
+    var link = ''
+    var a = findAnchor(e)
+    if (a && /^(https?|mailto):/i.test(a.href)) link = a.href
+    if (!window.htmx) return
+    window.htmx
+      .ajax('POST', '/ctxmenu/open', {
+        target: '#ctxmenu-host',
+        swap: 'innerHTML',
+        values: {
+          sel: hasSel ? '1' : '',
+          undo: canEditCmd('undo') ? '1' : '',
+          redo: canEditCmd('redo') ? '1' : '',
+          link: link,
+        },
+      })
+      .then(function () {
+        var m = ctxMenu()
+        if (!m) return
+        // クリック位置に表示し、画面からはみ出す分は内側へ寄せる（CSS は位置決めまで非表示）。
+        var left = Math.max(0, Math.min(x, window.innerWidth - m.offsetWidth - 4))
+        var top = Math.max(0, Math.min(y, window.innerHeight - m.offsetHeight - 4))
+        m.style.left = left + 'px'
+        m.style.top = top + 'px'
+        m.style.visibility = 'visible'
+      })
+  })
+  // mousedown の既定動作（フォーカス移動・選択解除・キャレット移動）を 2 か所で抑止する。
+  //   1. メニュー内: 本文の選択を保ったまま「コピー」等を実行するため。メニュー外はクローズ。
+  //   2. 本文内のコンテキストクリック（選択がある間のみ）: 既定では選択範囲の外を右クリックすると
+  //      選択が解除され、「コピー」等が非活性に戻って実質使えなくなるため、選択を保ったままにする。
+  //      選択が無いときは既定に任せる（編集モードでキャレットがクリック位置へ移り、そこへ貼り付く）。
+  //      macOS の Ctrl+クリックは右ボタンではなく button 0＋ctrlKey で来るため、これも同様に扱う
+  //      （Windows/Linux の Ctrl+左クリックは本アプリで機能を持たず、click は従来どおり発火する）。
+  document.addEventListener(
+    'mousedown',
+    function (e) {
+      var m = ctxMenu()
+      if (m) {
+        if (m.contains(e.target)) {
+          e.preventDefault()
+          return
+        }
+        closeCtxMenu()
+      }
+      var content = document.getElementById('content')
+      var isContextClick = e.button === 2 || (e.button === 0 && e.ctrlKey)
+      if (isContextClick && content && content.contains(e.target) && hasContentSelection()) {
+        e.preventDefault()
+      }
+    },
+    true
+  )
+  document.addEventListener('click', function (e) {
+    var m = ctxMenu()
+    if (!m || !m.contains(e.target)) return
+    var btn = e.target.closest ? e.target.closest('.ctxmenu-item') : null
+    if (!btn || btn.disabled) return
+    var cmd = btn.getAttribute('data-ctx-cmd')
+    var openURL = btn.getAttribute('data-ctx-link-open')
+    var copyURL = btn.getAttribute('data-ctx-link-copy')
+    closeCtxMenu()
+    if (cmd) {
+      editExec(cmd)
+    } else if (openURL && window.htmx) {
+      window.htmx.ajax('POST', '/link/confirm', {
+        target: '#dialog-host',
+        swap: 'innerHTML',
+        values: { url: openURL },
+      })
+    } else if (copyURL) {
+      copyText(copyURL)
+    }
+  })
+  // スクロール・ウィンドウ操作でメニューと表示位置がずれるため閉じる（scroll は capture で拾う）。
+  document.addEventListener('scroll', function () { closeCtxMenu() }, true)
+  window.addEventListener('resize', closeCtxMenu)
+  window.addEventListener('blur', closeCtxMenu)
+
+  // テキストをクリップボードへコピーする（リンク URL 用）。Clipboard API が使えない
+  // WebView では一時 textarea ＋ execCommand にフォールバックする。
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(function () { fallbackCopy(text) })
+      return
+    }
+    fallbackCopy(text)
+  }
+  function fallbackCopy(text) {
+    var ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    try {
+      document.execCommand('copy')
+    } catch (e) {
+      /* コピー不可環境は無視 */
+    }
+    document.body.removeChild(ta)
+  }
+
 })()

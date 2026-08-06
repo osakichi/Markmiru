@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Markmiru ビルドスクリプト（macOS / Linux）。
 #
-# 検証状況: macOS（arm64）・Linux（amd64, Ubuntu 24.04）で動作確認済み
-#   （いずれもビルド・起動・アプリ機能まで実機検証）。
+# 検証状況: macOS（arm64・x86_64）・Linux（amd64, Ubuntu 24.04）で動作確認済み
+#   （いずれもビルド・起動・アプリ動作まで実機検証）。
 #
 # Go のみのビルド: 本アプリは Go-SSR（Wails AssetServer.Handler）で、install/bundle すべき
 # フロントエンドは無い。wails build が Go バックエンドをコンパイルして exe を

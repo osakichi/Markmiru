@@ -40,14 +40,14 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 - `web`（新規パッケージ）— **Go-SSR の中心**。`http.Handler`（`web.go`：全 htmx エンドポイント＋CSP ミドルウェア）、`html/template` フラグメント（`web/templates/*.html`）、アプリ状態（`web/state.go`：タブ集合／アクティブ／dirty／セッション／スタイル）、静的アセット（`web/assets/`：`glue.js` / `htmx.min.js` / `mermaid.min.js` / CSS / 同梱フォント）。OS 連携は `web.Host` インタフェース経由で `main` の `webHost` アダプタが `app.go` のメソッドへ委譲する。
 - `render`（新規）— 描画パイプライン **goldmark（GFM・脚注）→ chroma（コードハイライト）→ bluemonday（サニタイズ）**。mermaid はプレースホルダのまま返し WebView の mermaid.js が描画。ローカル画像の data URI 化・外部画像の遮断制御もここ。
 - `style`（新規）— スタイル定義（Go 型）→ CSS 変数生成。プリセット・エクスポート/インポート。設計は `docs/スタイル設定設計.md`。
-- `app.go` — `App` 構造体と Wails バインドの**公開メソッド**（`OpenFiles` / `ReadFile` / `SaveFile` / `SaveFileDialog` / `ExportStyleDialog` / `ImportStyleDialog` / `SetEditMenuEnabled` / `SetSaveMenuEnabled` / `SetModeMenuEnabled` / `OpenExternalURL` / `Quit` / `FocusWindow` / `Print` 等、OS 機能に限定）。小文字始まりは非公開（`emit` / `openFileFromIPC` 等）。`LICENSE.md` / `README.md` を `//go:embed`。
+- `app.go` — `App` 構造体と Wails バインドの**公開メソッド**（`OpenFiles` / `ReadFile` / `SaveFile` / `SaveFileDialog` / `ExportStyleDialog` / `ImportStyleDialog` / `SetEditMenuEnabled` / `SetSaveMenuEnabled` / `SetModeMenuEnabled` / `OpenExternalURL` / `ClipboardText` / `Quit` / `FocusWindow` / `Print` 等、OS 機能に限定）。小文字始まりは非公開（`emit` / `openFileFromIPC` 等）。`LICENSE.md` / `README.md` を `//go:embed`。
 - `config.go` — `config.json`（`os.UserConfigDir()/Markmiru/`）への設定・セッション永続化。標準ライブラリのみ。ウィンドウ状態は `saveWindowState`、セッション/スタイル/サイドバーは `beforeClose` の `persistSession`（`web.State` から生成・main で注入）が保存する。
 - `platform_*.go`（`_windows` / `_darwin` / `_linux` / `_other`）— OS 依存処理（ウィンドウ前面化・WebView フォーカス・印刷 `platformPrint` 等）をビルドタグで切替。darwin のみ cgo（Objective-C）で自前のネイティブ印刷（縦向きデフォルト）を実装し、他 OS は未処理を返して Wails `WindowPrint` にフォールバックする。`isMacOS` 等でメニューを分岐。
 - `single_instance.go` — Unix ソケット（`os.UserCacheDir()/Markmiru/`）による多重起動防止＋IPC。2 つ目の起動は既存へパスを渡して終了、既存ウィンドウを前面化。既存アプリでは `ipc:open-file` イベント→glue→`POST /tabs/open-path` でそのファイルを開く。
 
 ### WebView 表示層（`web/assets/`）
 
-- `glue.js` — WebView 内の唯一の自作 JS。「仕組み的グルー」に限定: mermaid 再描画、編集オーバーレイのスクロール同期、保存前の未送信編集 flush（menu:save/saveAs・Ctrl+S フォールバック）、ネイティブメニュー/IPC の Wails イベント（`window.runtime.EventsOn('menu:*' / 'ipc:open-file' / 'app:request-quit')`）→ htmx.ajax ブリッジ、ダイアログのフォーカス/Esc/危険確認の遅延活性化、ページ内検索（CSS Custom Highlight API）、外部リンクの遷移制御、印刷トリガ、設定の対入力同期。
+- `glue.js` — WebView 内の唯一の自作 JS。「仕組み的グルー」に限定: mermaid 再描画、編集オーバーレイのスクロール同期、保存前の未送信編集 flush（menu:save/saveAs・Ctrl+S フォールバック）、ネイティブメニュー/IPC の Wails イベント（`window.runtime.EventsOn('menu:*' / 'ipc:open-file' / 'app:request-quit')`）→ htmx.ajax ブリッジ、ダイアログのフォーカス/Esc/危険確認の遅延活性化、ページ内検索（CSS Custom Highlight API）、外部リンクの遷移制御、印刷トリガ、設定の対入力同期、右クリックメニュー（サーバ断片の注入・位置決め・選択の保持・実行）。
 - htmx / mermaid.min.js — 既製ライブラリ（vendoring 済み）。htmx が操作→Go 要求→DOM 断片差し替えを担う。
 - CSS（`app.css` / `markdown.css`）＋ 同梱フォント（`fonts.css` / `fonts/*.woff2`）。本文配色・組版は Go 出力のスタイル変数（`#styleblock`）。
 
@@ -68,7 +68,7 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 | MUST | マルチタブで複数ドキュメントを切り替えて表示できる | ✅ 実装済み |
 | SHOULD | スタイルの修正/変更ができる | ✅ 実装済み |
 | SHOULD | PDF 出力できる | ✅ 実装済み |
-| SHOULD | クロスプラットフォーム対応 | ✅ 実装済み（Windows / macOS〔arm64〕/ Linux〔amd64・Ubuntu 24.04〕で動作確認済み） |
+| SHOULD | クロスプラットフォーム対応 | ✅ 実装済み（Windows / macOS〔Apple Silicon・Intel〕/ Linux〔amd64・Ubuntu 24.04〕で動作確認済み） |
 | SHOULD | Markdown の編集ができる（編集モードでの編集） | ✅ 実装済み |
 | SHOULD | 「閲覧モード」と「編集モード」を切り替えられる | ✅ 実装済み |
 | SHOULD | 不正な Markdown への防御（CSP・外部リンク制御・外部画像の表示確認・bluemonday サニタイズ） | ✅ 実装済み |
@@ -81,6 +81,7 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 - **最終目標: Windows / macOS / Linux（デスクトップ3種）**
 - モバイル（iPhone / Android）は**対象外**（Wails 採用に伴いモバイル不可。この前提で確定）
 - 配布形態: ビルド成果物をまとめた**簡素なアーカイブ**（Windows: `.exe` を ZIP／macOS: `.app` を ZIP／Linux: バイナリを tar.gz）。インストーラ形式は採らない
+- **右クリックメニューは Windows（WebView2）でのみ実機検証済み。** macOS / Linux で検証・修正する際は `docs/アーキテクチャ・画面設計.md` §10「右クリックメニューのプラットフォーム別確認ポイント」を必ず参照すること（WebView 依存で挙動が分かれ得る確認項目と、コード確認済みで対処不要な項目を分けて記載）
 
 ## 技術スタック
 
@@ -110,7 +111,7 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 
 ## 残タスク
 
-- なし（`docs/` の Go-SSR 構成への追随は完了。将来フェーズの候補は `docs/アーキテクチャ・画面設計.md` §10「未着手（将来フェーズ）」を参照）。
+- なし（`docs/` の Go-SSR 構成への追随は完了。将来課題は `docs/アーキテクチャ・画面設計.md` §10「将来課題」を参照）。
 
 ## 埋め込みドキュメント（ヘルプメニュー）
 
@@ -130,7 +131,7 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 - **埋め込み方法（ビルドスクリプトが両方を実施）**:
   - **OS プロパティ**: `wails.json` の `info.productVersion` に SHA を一時注入 → Wails が `build/windows/info.json`（Windows）・`build/darwin/Info.plist`（macOS）へ展開して実行バイナリに埋め込む。注入後は `wails.json` を**元に戻す**（リポジトリに SHA 差分を残さない。`info.productVersion` の既定は `dev`）。Windows「詳細 → 製品バージョン」に表示（`File version` は数値固定 `0.0.0.0`＝`build/windows/info.json` の `fixed.file_version`）。
   - **実行時表示**: Go の ldflags `-X main.version=<sha>`（`main.version` の既定は `dev`）。`ReadReadme()` が About（README）タブ先頭に「バージョン: <sha>」を追記。
-- **ビルドスクリプト**: `scripts/build.ps1`（Windows・動作確認済み）。`scripts/build.sh`（macOS/Linux 用、同等処理）は **macOS（arm64）・Linux（amd64・Ubuntu 24.04）で動作確認済み**（いずれも Go-SSR 版でビルド／起動／アプリ機能まで実機検証）。Linux では WebKitGTK 4.1 の有無を pkg-config で自動判別し、あれば `-tags webkit2_41` を付与する。
+- **ビルドスクリプト**: `scripts/build.ps1`（Windows・動作確認済み）。`scripts/build.sh`（macOS/Linux 用、同等処理）は **macOS（arm64・x86_64）・Linux（amd64・Ubuntu 24.04）で動作確認済み**（いずれも Go-SSR 版でビルド／起動／アプリ動作まで実機検証）。Linux では WebKitGTK 4.1 の有無を pkg-config で自動判別し、あれば `-tags webkit2_41` を付与する。
 - **注意**: `scripts/build.ps1` は PowerShell 5.1 が BOM 無し UTF-8 の日本語コメントを誤読する問題を避けるため、**コメントを ASCII（英語）で記述**している。編集時もこの方針を維持する。
 - **配布物（`dist/`）**: ビルド成功後、両スクリプトが `dist/Markmiru-<platform>-<arch>-<sha>-<yyyymmdd>.zip` を出力する（`<sha>`＝版と同じ git ショート SHA、`<yyyymmdd>`＝作成日）。Windows=`.exe` を `Compress-Archive`、macOS=`.app` を `ditto -c -k --keepParent`（バンドルの権限/シンボリックリンク保持）、Linux=バイナリのみを `tar.gz`（実行権限保持のため ZIP ではなく tar.gz。拡張子は `.tar.gz`）。`dist/` は `.gitignore` 済み（配布物はコミットしない）。`<arch>` は `build.sh` が `uname -m` から取得する一方、**`build.ps1` は `windows-amd64` 固定**（アーキテクチャを検出しない。ARM Windows 対応時は要修正）。
 

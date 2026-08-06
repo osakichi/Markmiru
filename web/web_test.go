@@ -1,6 +1,7 @@
 package web
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -36,6 +37,8 @@ type fakeHost struct {
 	quitCalled      bool              // Quit が呼ばれたか
 	readFiles       map[string]string // ReadFile が返す内容（path→content）。無ければ ok=false
 	openedURL       string            // OpenURL に渡された最後の URL
+	clipboard       string            // ClipboardText が返すテキスト
+	clipboardErr    error             // ClipboardText が返すエラー
 }
 
 func (h *fakeHost) OpenFilesDialog() ([]OpenedFile, error) { return h.openFiles, nil }
@@ -63,6 +66,8 @@ func (h *fakeHost) ReadFile(path string) (string, string, bool) {
 	return filepath.Base(path), content, true
 }
 func (h *fakeHost) OpenURL(url string) { h.openedURL = url }
+
+func (h *fakeHost) ClipboardText() (string, error) { return h.clipboard, h.clipboardErr }
 
 // newH は host 不要のテスト向けに空の fakeHost で Handler を作る。
 func newH(st *State) http.Handler { return NewHandler(st, &fakeHost{}) }
@@ -1448,5 +1453,151 @@ func TestUnknownPathNotFound(t *testing.T) {
 	rec := do(newH(testState()), "GET", "/nope")
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want 404", rec.Code)
+	}
+}
+
+// --- コンテキストメニュー（POST /ctxmenu/open） ------------------------------
+
+// ctxItems は右クリックメニュー断片を「項目キー→その項目が disabled か」に分解する。
+// キーは data-ctx-cmd の値、リンク項目は "link-open" / "link-copy"（1 項目＝1 行前提）。
+func ctxItems(t *testing.T, body string) map[string]bool {
+	t.Helper()
+	out := map[string]bool{}
+	for _, line := range strings.Split(body, "\n") {
+		var key string
+		switch {
+		case strings.Contains(line, "data-ctx-cmd="):
+			key = strings.SplitN(strings.SplitN(line, `data-ctx-cmd="`, 2)[1], `"`, 2)[0]
+		case strings.Contains(line, "data-ctx-link-open="):
+			key = "link-open"
+		case strings.Contains(line, "data-ctx-link-copy="):
+			key = "link-copy"
+		default:
+			continue
+		}
+		out[key] = strings.Contains(line, " disabled")
+	}
+	return out
+}
+
+// 項目の並びは全ケースで同一。閲覧モードでは編集系が、選択が無ければ切り取り/コピーが
+// disabled になる（項目自体は消さない）。
+func TestCtxMenuViewMode(t *testing.T) {
+	h := newH(testState())
+	items := ctxItems(t, do(h, "POST", "/ctxmenu/open").Body.String())
+	for _, key := range []string{"undo", "redo", "cut", "copy", "paste", "selectAll", "link-open", "link-copy"} {
+		if _, ok := items[key]; !ok {
+			t.Fatalf("menu item %q missing in view mode: %v", key, items)
+		}
+	}
+	for _, key := range []string{"undo", "redo", "cut", "paste", "copy", "link-open", "link-copy"} {
+		if !items[key] {
+			t.Errorf("%q should be disabled in view mode without selection", key)
+		}
+	}
+	if items["selectAll"] {
+		t.Errorf("selectAll should always be enabled")
+	}
+	// 選択があればコピーのみ活性化（切り取りは閲覧モードでは不可のまま）。
+	items = ctxItems(t, do(h, "POST", "/ctxmenu/open?sel=1").Body.String())
+	if items["copy"] {
+		t.Errorf("copy should be enabled with selection")
+	}
+	if !items["cut"] {
+		t.Errorf("cut should stay disabled in view mode")
+	}
+}
+
+// 編集モード: 編集系が活性。選択の有無が切り取り/コピーの活性を決める。
+func TestCtxMenuEditMode(t *testing.T) {
+	st := testState()
+	st.SetMode(st.ActiveID())
+	h := newH(st)
+	items := ctxItems(t, do(h, "POST", "/ctxmenu/open?sel=1&undo=1&redo=1").Body.String())
+	for _, key := range []string{"undo", "redo", "cut", "copy", "paste", "selectAll"} {
+		if items[key] {
+			t.Errorf("%q should be enabled in edit mode with selection", key)
+		}
+	}
+	items = ctxItems(t, do(h, "POST", "/ctxmenu/open?undo=1&redo=1").Body.String())
+	if !items["cut"] || !items["copy"] {
+		t.Errorf("cut/copy should be disabled without selection: %v", items)
+	}
+	if items["paste"] {
+		t.Errorf("paste should stay enabled without selection")
+	}
+}
+
+// 取り消し履歴を使い切った側（undo / redo）だけが非活性になる。編集モードでも履歴が無ければ非活性。
+func TestCtxMenuUndoRedoHistory(t *testing.T) {
+	st := testState()
+	st.SetMode(st.ActiveID())
+	h := newH(st)
+	items := ctxItems(t, do(h, "POST", "/ctxmenu/open?redo=1").Body.String())
+	if !items["undo"] {
+		t.Errorf("undo should be disabled when nothing is left to undo: %v", items)
+	}
+	if items["redo"] {
+		t.Errorf("redo should stay enabled: %v", items)
+	}
+	items = ctxItems(t, do(h, "POST", "/ctxmenu/open?undo=1").Body.String())
+	if items["undo"] {
+		t.Errorf("undo should stay enabled: %v", items)
+	}
+	if !items["redo"] {
+		t.Errorf("redo should be disabled when nothing is left to redo: %v", items)
+	}
+	// 閲覧モードでは履歴があっても編集操作自体ができないため非活性のまま。
+	items = ctxItems(t, do(newH(testState()), "POST", "/ctxmenu/open?undo=1&redo=1").Body.String())
+	if !items["undo"] || !items["redo"] {
+		t.Errorf("undo/redo must stay disabled in view mode: %v", items)
+	}
+}
+
+// リンク項目: 外部スキームのみ活性化し、それ以外（javascript: 等）は URL を出さず disabled のまま。
+func TestCtxMenuLink(t *testing.T) {
+	h := newH(testState())
+	body := do(h, "POST", "/ctxmenu/open?link=https%3A%2F%2Fexample.com%2F").Body.String()
+	if items := ctxItems(t, body); items["link-open"] || items["link-copy"] {
+		t.Errorf("link items should be enabled for an external URL: %v", items)
+	}
+	if !strings.Contains(body, `data-ctx-link-open="https://example.com/"`) {
+		t.Errorf("link URL missing: %q", body)
+	}
+	body = do(h, "POST", "/ctxmenu/open?link=javascript%3Aalert(1)").Body.String()
+	if items := ctxItems(t, body); !items["link-open"] || !items["link-copy"] {
+		t.Errorf("link items must stay disabled for a non-external URL: %v", items)
+	}
+	if strings.Contains(body, "javascript") {
+		t.Errorf("non-external URL must not be emitted: %q", body)
+	}
+}
+
+// --- クリップボード読み取り（POST /clipboard/read） ---------------------------
+
+// クリップボードの内容をそのまま text/plain で返す（貼り付けは glue が挿入する）。
+func TestClipboardRead(t *testing.T) {
+	host := &fakeHost{clipboard: "貼り付ける文字列"}
+	rec := do(NewHandler(testState(), host), "POST", "/clipboard/read")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if got := rec.Body.String(); got != "貼り付ける文字列" {
+		t.Errorf("body = %q, want the clipboard text", got)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/plain") {
+		t.Errorf("Content-Type = %q, want text/plain", ct)
+	}
+}
+
+// 取得失敗時は本文を返さない（glue 側は無視して何も挿入しない）。
+func TestClipboardReadError(t *testing.T) {
+	host := &fakeHost{clipboard: "secret", clipboardErr: errors.New("no clipboard")}
+	rec := do(NewHandler(testState(), host), "POST", "/clipboard/read")
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", rec.Code)
+	}
+	if strings.Contains(rec.Body.String(), "secret") {
+		t.Errorf("clipboard text must not be returned on error: %q", rec.Body.String())
 	}
 }

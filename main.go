@@ -161,6 +161,8 @@ func (h webHost) Quit()                             { h.app.Quit() }
 
 func (h webHost) OpenURL(url string) { h.app.OpenExternalURL(url) }
 
+func (h webHost) ClipboardText() (string, error) { return h.app.ClipboardText() }
+
 func (h webHost) ReadFile(path string) (string, string, bool) {
 	doc, err := h.app.ReadFile(path)
 	if err != nil {

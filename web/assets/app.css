@@ -353,6 +353,47 @@ body {
   z-index: 1000;
 }
 
+/* 右クリックメニュー（#ctxmenu-host に注入する断片）。位置（left/top）は glue が
+   クリック座標から設定するため、設定されるまで visibility:hidden で隠す
+   （左上での一瞬のチラつき防止）。配色はダイアログ（.mm-dialog）と同じ固定ライト。 */
+.ctxmenu {
+  position: fixed;
+  visibility: hidden;
+  min-width: 11rem;
+  padding: 4px 0;
+  background: #ffffff;
+  color: #24292f;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  z-index: 1001;
+}
+.ctxmenu-item {
+  display: block;
+  width: 100%;
+  padding: 0.3rem 1rem;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ctxmenu-item:hover:not(:disabled) {
+  background: #f6f8fa;
+}
+.ctxmenu-item:disabled {
+  color: #8c959f;
+  cursor: default;
+}
+.ctxmenu-sep {
+  margin: 4px 0;
+  border: 0;
+  border-top: 1px solid #d0d7de;
+}
+
 /* モーダルダイアログ（#dialog-host に差し込む断片）。 */
 .mm-backdrop {
   position: fixed;
