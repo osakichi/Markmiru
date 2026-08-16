@@ -47,7 +47,7 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 
 ### WebView 表示層（`web/assets/`）
 
-- `glue.js` — WebView 内の唯一の自作 JS。「仕組み的グルー」に限定: mermaid 再描画、編集オーバーレイのスクロール同期、保存前の未送信編集 flush（menu:save/saveAs・Ctrl+S フォールバック）、ネイティブメニュー/IPC の Wails イベント（`window.runtime.EventsOn('menu:*' / 'ipc:open-file' / 'app:request-quit')`）→ htmx.ajax ブリッジ、ダイアログのフォーカス/Esc/危険確認の遅延活性化、ページ内検索（CSS Custom Highlight API）、外部リンクの遷移制御、印刷トリガ、設定の対入力同期、右クリックメニュー（サーバ断片の注入・位置決め・選択の保持・実行）。
+- `glue.js` — WebView 内の唯一の自作 JS。「仕組み的グルー」に限定: mermaid 再描画、編集オーバーレイのスクロール同期、保存前の未送信編集 flush（menu:save/saveAs・Ctrl+S フォールバック）、ネイティブメニュー/IPC の Wails イベント（`window.runtime.EventsOn('menu:*' / 'ipc:open-file' / 'app:request-quit')`）→ htmx.ajax ブリッジ、ダイアログのフォーカス/Esc/危険確認の遅延活性化、ページ内検索（CSS Custom Highlight API）、外部リンクの遷移制御、印刷トリガ、設定の対入力同期、右クリックメニュー（サーバ断片の注入・位置決め・選択とキャレットの保持・実行）。
 - htmx / mermaid.min.js — 既製ライブラリ（vendoring 済み）。htmx が操作→Go 要求→DOM 断片差し替えを担う。
 - CSS（`app.css` / `markdown.css`）＋ 同梱フォント（`fonts.css` / `fonts/*.woff2`）。本文配色・組版は Go 出力のスタイル変数（`#styleblock`）。
 
@@ -81,7 +81,7 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 - **最終目標: Windows / macOS / Linux（デスクトップ3種）**
 - モバイル（iPhone / Android）は**対象外**（Wails 採用に伴いモバイル不可。この前提で確定）
 - 配布形態: ビルド成果物をまとめた**簡素なアーカイブ**（Windows: `.exe` を ZIP／macOS: `.app` を ZIP／Linux: バイナリを tar.gz）。インストーラ形式は採らない
-- **右クリックメニューは Windows（WebView2）でのみ実機検証済み。** macOS / Linux で検証・修正する際は `docs/アーキテクチャ・画面設計.md` §10「右クリックメニューのプラットフォーム別確認ポイント」を必ず参照すること（WebView 依存で挙動が分かれ得る確認項目と、コード確認済みで対処不要な項目を分けて記載）
+- **右クリックメニューは Windows（WebView2）・macOS（WKWebView）で実機検証済み。Linux（WebKitGTK）は未検証。** Linux で検証・修正する際は `docs/アーキテクチャ・画面設計.md` §10「右クリックメニューのプラットフォーム別確認ポイント」を必ず参照すること（WebView 依存で挙動が分かれ得る確認項目と、コード確認済みで対処不要な項目を分けて記載）
 
 ## 技術スタック
 

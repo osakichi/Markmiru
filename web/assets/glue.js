@@ -615,16 +615,54 @@
     var sel = window.getSelection && window.getSelection()
     return !!sel && !sel.isCollapsed
   }
+  // コンテキストクリック直前の選択状態（下の mousedown で採り、contextmenu で使い捨てる）。
+  // null は「直前にコンテキストクリックが無い」＝キーボード起動（Windows/Linux の Menu キー・
+  // Shift+F10）を意味し、その場合は従来どおり contextmenu 時点の実測にフォールバックする。
+  var ctxClickSel = null
+  function snapshotSelection() {
+    var ta = document.querySelector('.editor-input')
+    if (ta) {
+      return { ta: ta, start: ta.selectionStart, end: ta.selectionEnd, dir: ta.selectionDirection }
+    }
+    var sel = window.getSelection && window.getSelection()
+    return { ta: null, hadSel: !!sel && !sel.isCollapsed }
+  }
+  function snapshotHasSelection(snap) {
+    return snap.ta ? snap.start !== snap.end : snap.hadSel
+  }
+  // クリック時点の選択へ戻す。mousedown の既定動作は抑止済みだが、macOS の WebKit は
+  // コンテキストクリックでポインタ下の単語を自動選択する（EditingBehavior が Mac のときだけ
+  // 有効な挙動。Windows の Blink・Linux の WebKitGTK には無い）ため、抑止で止まらなかった場合の
+  // 保険として戻す。閲覧モードは範囲の復元まではせず、無かった選択が生じた場合に解除するだけ。
+  function restoreSelection(snap) {
+    if (!snap) return
+    if (snap.ta) {
+      if (snap.ta.selectionStart !== snap.start || snap.ta.selectionEnd !== snap.end) {
+        try {
+          snap.ta.setSelectionRange(snap.start, snap.end, snap.dir)
+        } catch (e) {
+          /* 差し替え済み等で設定できない場合は諦める */
+        }
+      }
+      return
+    }
+    if (snap.hadSel) return
+    var sel = window.getSelection && window.getSelection()
+    if (sel && !sel.isCollapsed) sel.removeAllRanges()
+  }
   document.addEventListener('contextmenu', function (e) {
+    var snap = ctxClickSel
+    ctxClickSel = null // 使い捨て（古い値をあとのキーボード起動に持ち越さない）
     var content = document.getElementById('content')
     if (!content || !content.contains(e.target)) {
       closeCtxMenu() // 本文の外は既定動作のまま（メニューだけ閉じる）
       return
     }
     e.preventDefault()
+    restoreSelection(snap)
     var x = e.clientX
     var y = e.clientY
-    var hasSel = hasContentSelection()
+    var hasSel = snap ? snapshotHasSelection(snap) : hasContentSelection()
     var link = ''
     var a = findAnchor(e)
     if (a && /^(https?|mailto):/i.test(a.href)) link = a.href
@@ -653,9 +691,11 @@
   })
   // mousedown の既定動作（フォーカス移動・選択解除・キャレット移動）を 2 か所で抑止する。
   //   1. メニュー内: 本文の選択を保ったまま「コピー」等を実行するため。メニュー外はクローズ。
-  //   2. 本文内のコンテキストクリック（選択がある間のみ）: 既定では選択範囲の外を右クリックすると
-  //      選択が解除され、「コピー」等が非活性に戻って実質使えなくなるため、選択を保ったままにする。
-  //      選択が無いときは既定に任せる（編集モードでキャレットがクリック位置へ移り、そこへ貼り付く）。
+  //   2. 本文内のコンテキストクリック: 選択とキャレットを一切変えずにメニューを出すため、
+  //      選択の有無にかかわらず抑止する。既定に任せると (a) 選択範囲の外を右クリックしたときに
+  //      選択が解除され「コピー」等が実質使えなくなり、(b) macOS ではポインタ下の単語が自動選択
+  //      されて「選択していないのに切り取り／コピーが使える」状態になる。抑止の結果、右クリックは
+  //      キャレットを動かさず、「貼り付け」は直前のキャレット位置に入る（3 OS 共通）。
   //      macOS の Ctrl+クリックは右ボタンではなく button 0＋ctrlKey で来るため、これも同様に扱う
   //      （Windows/Linux の Ctrl+左クリックは本アプリで機能を持たず、click は従来どおり発火する）。
   document.addEventListener(
@@ -671,8 +711,11 @@
       }
       var content = document.getElementById('content')
       var isContextClick = e.button === 2 || (e.button === 0 && e.ctrlKey)
-      if (isContextClick && content && content.contains(e.target) && hasContentSelection()) {
+      if (isContextClick && content && content.contains(e.target)) {
+        ctxClickSel = snapshotSelection() // この時点の選択が contextmenu の判定材料になる
         e.preventDefault()
+      } else {
+        ctxClickSel = null
       }
     },
     true
