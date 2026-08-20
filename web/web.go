@@ -15,6 +15,7 @@ import (
 	"html/template"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -587,10 +588,27 @@ func (s *Server) serveNavWithDialog(w http.ResponseWriter, dlg *dialogVM) {
 	_ = shellTmpl.ExecuteTemplate(w, "nav", vm)
 }
 
+// webViewHost は Windows の WebView2 がアプリ自身を配信するホスト（Wails の startURL は
+// http://wails.localhost/）。macOS/Linux は wails:// スキームのため下のスキーム判定で落ちる。
+const webViewHost = "wails.localhost"
+
 // isExternalURL は OS ブラウザ／メーラで開いてよいスキームか（http/https/mailto）を判定する。
+// Windows ではアプリ自身が http で配信されるため、文書内アンカーや相対リンクが解決されて
+// できる自オリジンの URL（http://wails.localhost/...）は外部とみなさない。判定は glue の
+// externalHref と同じで、glue 側が漏らしても OS ブラウザまで到達させないための多層防御（§5.11）。
 func isExternalURL(u string) bool {
 	l := strings.ToLower(strings.TrimSpace(u))
-	return strings.HasPrefix(l, "http://") || strings.HasPrefix(l, "https://") || strings.HasPrefix(l, "mailto:")
+	if strings.HasPrefix(l, "mailto:") {
+		return true
+	}
+	if !strings.HasPrefix(l, "http://") && !strings.HasPrefix(l, "https://") {
+		return false
+	}
+	parsed, err := url.Parse(l)
+	if err != nil {
+		return false
+	}
+	return parsed.Hostname() != webViewHost
 }
 
 // serveLinkConfirm はプレビュー内の外部リンククリックを受け、確認ダイアログを #dialog-host に出す。

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -1405,6 +1406,36 @@ func TestLinkConfirmRejectsNonExternalScheme(t *testing.T) {
 	}
 }
 
+// Windows ではアプリ自身が http://wails.localhost/ から配信されるため、文書内アンカーや
+// 相対リンクが解決されてできる自オリジンの URL は外部として扱わない（OS ブラウザへ渡さない）。
+func TestLinkRejectsWebViewOwnOrigin(t *testing.T) {
+	st := NewState()
+	host := &fakeHost{}
+	for _, u := range []string{"http://wails.localhost/#anchor", "http://wails.localhost/other.md"} {
+		rec := httptest.NewRecorder()
+		NewHandler(st, host).ServeHTTP(rec, httptest.NewRequest("POST", "/link/confirm?url="+url.QueryEscape(u), nil))
+		if strings.Contains(rec.Body.String(), "開きますか") {
+			t.Errorf("own origin should not show a dialog: %q", u)
+		}
+		if st.PendingLink() != "" {
+			t.Errorf("own origin should not be stored: %q", u)
+		}
+		// 保持中でも開かない（多層防御）。
+		st.SetPendingLink(u)
+		do(NewHandler(st, host), "POST", "/link/open")
+		if host.openedURL != "" {
+			t.Errorf("must never open the app's own origin: %q", host.openedURL)
+		}
+		st.SetPendingLink("")
+	}
+	// 紛らわしいホスト名は外部のまま（前方一致で誤って弾かない）。
+	rec := httptest.NewRecorder()
+	NewHandler(st, host).ServeHTTP(rec, httptest.NewRequest("POST", "/link/confirm?url=https://wails.localhost.example.com/", nil))
+	if !strings.Contains(rec.Body.String(), "開きますか") {
+		t.Errorf("a different host that merely starts with the WebView host is external")
+	}
+}
+
 func TestServeAssets(t *testing.T) {
 	h := newH(testState())
 	for _, p := range []string{"/assets/htmx.min.js", "/assets/mermaid.min.js", "/assets/glue.js", "/assets/app.css", "/assets/markdown.css"} {
@@ -1570,6 +1601,22 @@ func TestCtxMenuLink(t *testing.T) {
 	}
 	if strings.Contains(body, "javascript") {
 		t.Errorf("non-external URL must not be emitted: %q", body)
+	}
+}
+
+// 自オリジン（Windows の http://wails.localhost/…）はリンクではないので 2 項目は非活性のまま。
+// glue の externalHref が除外するが、サーバ側でも同じ判定を持つ（2026-08-17 の Windows 検証で
+// 文書内アンカーがリンク扱いになる不具合を検出）。
+func TestCtxMenuLinkRejectsWebViewOwnOrigin(t *testing.T) {
+	h := newH(testState())
+	for _, u := range []string{"http://wails.localhost/#anchor", "http://wails.localhost/other.md"} {
+		body := do(h, "POST", "/ctxmenu/open?link="+url.QueryEscape(u)).Body.String()
+		if items := ctxItems(t, body); !items["link-open"] || !items["link-copy"] {
+			t.Errorf("link items must stay disabled for the app's own origin (%q): %v", u, items)
+		}
+		if strings.Contains(body, "wails.localhost") {
+			t.Errorf("own-origin URL must not be emitted: %q", body)
+		}
 	}
 }
 

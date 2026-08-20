@@ -527,6 +527,20 @@
     }
     return null
   }
+  // externalHref は <a> が「OS ブラウザへ委譲すべき外部リンク」ならその絶対 URL を、そうでなければ
+  // '' を返す。クリック経路（§5.11）と右クリックメニュー（§5.10）が判定を共有する。
+  // a.href は解決済みの絶対 URL なので、スキームだけでは判定できない: Wails の配信元は
+  // **Windows だけ http://wails.localhost/**（macOS/Linux は wails://）で、文書内アンカーや
+  // 相対リンクも http:// に化けて外部リンクと誤判定されるため、raw href と自オリジンで除外する。
+  function externalHref(a) {
+    if (!a) return ''
+    var raw = a.getAttribute('href')
+    if (!raw || raw.charAt(0) === '#') return '' // 文書内アンカー
+    if (!/^(https?|mailto):/i.test(a.href)) return '' // wails:// 等（非外部スキーム）
+    var origin = window.location.origin
+    if (origin && a.href.indexOf(origin + '/') === 0) return '' // 相対リンク（自オリジンに解決）
+    return a.href
+  }
   document.addEventListener(
     'click',
     function (e) {
@@ -550,14 +564,15 @@
         }
         return
       }
-      // 解決済み絶対 URL でスキーム判定。外部は確認ダイアログへ。
-      if (/^(https?|mailto):/i.test(a.href)) {
+      // 外部リンクは確認ダイアログへ。
+      var ext = externalHref(a)
+      if (ext) {
         e.preventDefault()
         if (window.htmx) {
           window.htmx.ajax('POST', '/link/confirm', {
             target: '#dialog-host',
             swap: 'innerHTML',
-            values: { url: a.href },
+            values: { url: ext },
           })
         }
         return
@@ -663,9 +678,7 @@
     var x = e.clientX
     var y = e.clientY
     var hasSel = snap ? snapshotHasSelection(snap) : hasContentSelection()
-    var link = ''
-    var a = findAnchor(e)
-    if (a && /^(https?|mailto):/i.test(a.href)) link = a.href
+    var link = externalHref(findAnchor(e))
     if (!window.htmx) return
     window.htmx
       .ajax('POST', '/ctxmenu/open', {
