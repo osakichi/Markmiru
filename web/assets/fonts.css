@@ -1,5 +1,5 @@
-/* 同梱フォント（Noto Sans JP / Serif JP / Sans Mono, OFL）。@fontsource のサブセット別 @font-face を
-   web/assets/fonts/ へ vendoring（woff2 のみ・url を /assets/fonts/ へ書換）。生成: scripts で再生成可。 */
+/* 同梱フォント（Noto Sans JP / Serif JP / Sans Mono, OFL）。@fontsource 5.3.0 のサブセット別 @font-face を
+   web/assets/fonts/ へ vendoring（woff2 のみ・url を /assets/fonts/ へ書換）。再生成: scripts/vendor-fonts.sh */
 /* noto-sans-jp-latin-400-normal */
 @font-face {
   font-family: 'Noto Sans JP';

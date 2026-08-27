@@ -1,28 +1,41 @@
 #!/usr/bin/env bash
 # 同梱フォント（Noto Sans JP / Serif JP / Sans Mono, OFL）を web/assets/ へ vendoring する。
 #
-# @fontsource のサブセット別 @font-face（unicode-range 付き）を使い、日本語＋欧文をカバーする
-# 名前付きサブセット（latin / latin-ext / cyrillic / vietnamese / japanese）の woff2 のみを取り込む。
-# 生成物（web/assets/fonts/ と web/assets/fonts.css）はリポジトリにコミットするため、通常のビルドに
-# node_modules は不要。フォント更新時のみ、@fontsource を用意してこのスクリプトを再実行する。
+# @fontsource のサブセット別 @font-face を使い、日本語＋欧文をカバーする名前付きサブセット
+# （latin / latin-ext / cyrillic / vietnamese / japanese）の woff2 のみを取り込む。
 #
-# 前提: frontend/node_modules/@fontsource/{noto-sans-jp,noto-serif-jp,noto-sans-mono} が存在すること。
+# 取得元は @fontsource の npm パッケージだが、**npm は使わず** jsDelivr（npm CDN）から直接
+# ダウンロードする（本プロジェクトは node / npm に依存しない方針）。CDN 上の内容は npm パッケージと
+# 同一で、サブセット別 CSS（`japanese-400.css` 等）と `files/*.woff2` が同じ構成で並ぶ。
+#
+# 生成物（web/assets/fonts/ と web/assets/fonts.css）はリポジトリにコミットするため、通常のビルドで
+# このスクリプトを実行する必要は無い。フォント更新時のみ VERSION を上げて再実行する。
+#
+# 前提: curl（Windows は Git Bash 同梱の curl.exe。PowerShell の curl は Invoke-WebRequest の
+#       別名で挙動が異なるため、実体の curl.exe を優先する）。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-FS=frontend/node_modules/@fontsource
+VERSION=5.3.0 # @fontsource のバージョン（3 パッケージ共通で pin し、再現性を確保する）
+CDN=https://cdn.jsdelivr.net/npm/@fontsource
 OUT_DIR=web/assets/fonts
 OUT_CSS=web/assets/fonts.css
 
-if [ ! -d "$FS" ]; then
-  echo "error: $FS が見つかりません（cd frontend && npm install で @fontsource を用意）" >&2
+# curl.exe（Windows の実体）を優先し、無い環境（macOS / Linux）は curl にフォールバックする。
+CURL=curl.exe
+command -v "$CURL" >/dev/null 2>&1 || CURL=curl
+command -v "$CURL" >/dev/null 2>&1 || {
+  echo "error: curl が見つかりません（Windows は Git Bash 同梱の curl.exe を使用）" >&2
   exit 1
-fi
+}
+
+# 取得できなければ即失敗させる（-f）。生成物が中途半端に混ざるのを防ぐ。
+fetch() { "$CURL" -fsSL --retry 3 --retry-delay 2 -o "$2" "$1"; }
 
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 {
-  echo "/* 同梱フォント（Noto Sans JP / Serif JP / Sans Mono, OFL）。@fontsource のサブセット別 @font-face を"
+  echo "/* 同梱フォント（Noto Sans JP / Serif JP / Sans Mono, OFL）。@fontsource $VERSION のサブセット別 @font-face を"
   echo "   web/assets/fonts/ へ vendoring（woff2 のみ・url を /assets/fonts/ へ書換）。再生成: scripts/vendor-fonts.sh */"
 } > "$OUT_CSS"
 
@@ -36,19 +49,23 @@ for fam in noto-sans-jp noto-serif-jp noto-sans-mono; do
   fi
   for w in 400 700; do
     for sub in $subsets; do
-      css="$FS/$fam/$sub-$w.css"
-      woff2="$FS/$fam/files/$fam-$sub-$w-normal.woff2"
-      if [ -f "$css" ] && [ -f "$woff2" ]; then
-        cp "$woff2" "$OUT_DIR/"
-        copied=$((copied + 1))
-        # url を /assets/fonts/ へ書換え、woff（非 woff2）フォールバックを除去する。
-        sed -e 's#\./files/#/assets/fonts/#g' \
-            -e "s#, url([^)]*\.woff) format('woff')##g" \
-            "$css" >> "$OUT_CSS"
+      css_tmp="$OUT_DIR/.$fam-$sub-$w.css"
+      woff2="$fam-$sub-$w-normal.woff2"
+      # そのサブセットを持たないパッケージもあるため、CSS が無ければ静かに飛ばす。
+      if ! fetch "$CDN/$fam@$VERSION/$sub-$w.css" "$css_tmp" 2>/dev/null; then
+        rm -f "$css_tmp"
+        continue
       fi
+      fetch "$CDN/$fam@$VERSION/files/$woff2" "$OUT_DIR/$woff2"
+      copied=$((copied + 1))
+      # url を /assets/fonts/ へ書換え、woff（非 woff2）フォールバックを除去する。
+      sed -e 's#\./files/#/assets/fonts/#g' \
+          -e "s#, url([^)]*\.woff) format('woff')##g" \
+          "$css_tmp" >> "$OUT_CSS"
+      rm -f "$css_tmp"
     done
   done
 done
 
-echo "vendored $copied woff2 files into $OUT_DIR"
+echo "vendored $copied woff2 files into $OUT_DIR (@fontsource $VERSION via jsDelivr)"
 echo "generated $OUT_CSS ($(grep -c '@font-face' "$OUT_CSS") @font-face rules)"
