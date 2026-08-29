@@ -96,7 +96,10 @@ func buildMenu(app *App) *menu.Menu {
 	} else {
 		editMenu := appMenu.AddSubmenu("編集")
 		undoItem := editMenu.AddText("取り消し\tCtrl+Z", nil, func(_ *menu.CallbackData) { app.emit("menu:undo") })
-		redoItem := editMenu.AddText("やり直し\tCtrl+Y", nil, func(_ *menu.CallbackData) { app.emit("menu:redo") })
+		// やり直しの表記は Ctrl+Shift+Z（Ctrl+Y ではない）。glue が全 OS 共通で拾えるのは
+		// Ctrl+Shift+Z の方で、Ctrl+Y は macOS では入力欄の yank に割り当てられており横取り
+		// できないため（Windows では Ctrl+Y もネイティブに効くが、表記は 3 OS で揃える）。
+		redoItem := editMenu.AddText("やり直し\tCtrl+Shift+Z", nil, func(_ *menu.CallbackData) { app.emit("menu:redo") })
 		editMenu.AddSeparator()
 		cutItem := editMenu.AddText("切り取り\tCtrl+X", nil, func(_ *menu.CallbackData) { app.emit("menu:cut") })
 		editMenu.AddText("コピー\tCtrl+C", nil, func(_ *menu.CallbackData) { app.emit("menu:copy") })

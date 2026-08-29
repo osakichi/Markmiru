@@ -2,6 +2,86 @@
 
 package main
 
+/*
+#cgo pkg-config: gtk+-3.0
+#include <gtk/gtk.h>
+#include <stdlib.h>
+
+// 表示中のネイティブメニュー項目の有効/無効を直接切り替えるための最小限の GTK 操作。
+// Wails の MenuUpdateApplicationMenu が Linux では何もしない（Window.applicationMenu へ
+// 一度も代入されず SetApplicationMenu(nil) で戻る）ため、この経路で反映する。
+// 詳細と、再構築を促す回避策を採らない理由は docs/アーキテクチャ・画面設計.md §10。
+
+// findMenuBar は widget ツリーを辿って最初の GtkMenuBar を返す（無ければ NULL）。
+static GtkWidget *findMenuBar(GtkWidget *root) {
+	if (root == NULL) return NULL;
+	if (GTK_IS_MENU_BAR(root)) return root;
+	if (!GTK_IS_CONTAINER(root)) return NULL;
+	GList *children = gtk_container_get_children(GTK_CONTAINER(root));
+	GtkWidget *found = NULL;
+	for (GList *l = children; l != NULL && found == NULL; l = l->next) {
+		found = findMenuBar(GTK_WIDGET(l->data));
+	}
+	g_list_free(children);
+	return found;
+}
+
+// applyToItems はメニューシェル配下（サブメニューも再帰）でラベルが一致する項目に
+// gtk_widget_set_sensitive を適用する。
+static void applyToItems(GtkWidget *shell, const char *label, gboolean sensitive) {
+	GList *children = gtk_container_get_children(GTK_CONTAINER(shell));
+	for (GList *l = children; l != NULL; l = l->next) {
+		GtkWidget *item = GTK_WIDGET(l->data);
+		if (!GTK_IS_MENU_ITEM(item)) continue;
+		const char *itemLabel = gtk_menu_item_get_label(GTK_MENU_ITEM(item));
+		if (itemLabel != NULL && g_strcmp0(itemLabel, label) == 0) {
+			gtk_widget_set_sensitive(item, sensitive);
+		}
+		GtkWidget *sub = gtk_menu_item_get_submenu(GTK_MENU_ITEM(item));
+		if (sub != NULL) applyToItems(sub, label, sensitive);
+	}
+	g_list_free(children);
+}
+
+// setMenuItemSensitive は表示中のトップレベルからメニューバーを探し、ラベル一致の項目を更新する。
+static void setMenuItemSensitive(const char *label, gboolean sensitive) {
+	GList *tops = gtk_window_list_toplevels();
+	for (GList *l = tops; l != NULL; l = l->next) {
+		GtkWidget *bar = findMenuBar(GTK_WIDGET(l->data));
+		if (bar != NULL) applyToItems(bar, label, sensitive);
+	}
+	g_list_free(tops);
+}
+
+typedef struct {
+	char *labels; // 改行区切りのラベル群（ラベル自体は改行を含まない）
+	gboolean sensitive;
+} MenuSyncReq;
+
+// applyMenuSyncReq は GTK メインスレッドで実行される idle ハンドラ。
+static gboolean applyMenuSyncReq(gpointer data) {
+	MenuSyncReq *req = (MenuSyncReq *)data;
+	char **labels = g_strsplit(req->labels, "\n", -1);
+	for (int i = 0; labels[i] != NULL; i++) {
+		if (labels[i][0] != '\0') setMenuItemSensitive(labels[i], req->sensitive);
+	}
+	g_strfreev(labels);
+	g_free(req->labels);
+	g_free(req);
+	return G_SOURCE_REMOVE;
+}
+
+// scheduleMenuSensitivity は更新を GTK メインスレッドへ委ねる（HTTP ハンドラの goroutine から
+// GTK を直接触らないため）。g_idle_add はスレッド安全。
+static void scheduleMenuSensitivity(const char *labels, gboolean sensitive) {
+	MenuSyncReq *req = g_new0(MenuSyncReq, 1);
+	req->labels = g_strdup(labels);
+	req->sensitive = sensitive;
+	g_idle_add(applyMenuSyncReq, req);
+}
+*/
+import "C"
+
 import (
 	"bytes"
 	_ "embed"
@@ -10,6 +90,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unsafe"
 
 	"github.com/wailsapp/wails/v2/pkg/options/linux"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -125,6 +206,26 @@ func platformRaiseWindow(a *App) {
 // platformPrint は macOS 専用のネイティブ印刷実装。この OS では未処理（false）を返し、
 // 呼び出し側が Wails の WindowPrint（WebView 内で window.print() を実行）へフォールバックする。
 func platformPrint() bool { return false }
+
+// platformSetMenuItemsEnabled は表示中のネイティブメニュー項目の有効/無効を、ラベル一致で
+// 直接切り替える（処理したので true を返す＝呼び出し側は Wails の MenuUpdateApplicationMenu を
+// 使わない）。Linux でこの経路が要るのは、Wails の MenuUpdateApplicationMenu が何もしないため
+// （Window.applicationMenu へ一度も代入されず SetApplicationMenu(nil) で戻る。v2.15.0 でも未修正）。
+// 実際の更新は GTK メインスレッドで行う。ラベルは main.go の menu.MenuItem.Label をそのまま使う
+// （表記を変えたときに一致しなくなるのを避けるため、単一の出所から渡す）。
+func platformSetMenuItemsEnabled(labels []string, enabled bool) bool {
+	if len(labels) == 0 {
+		return true
+	}
+	cLabels := C.CString(strings.Join(labels, "\n"))
+	defer C.free(unsafe.Pointer(cLabels))
+	sensitive := C.gboolean(0)
+	if enabled {
+		sensitive = C.gboolean(1)
+	}
+	C.scheduleMenuSensitivity(cLabels, sensitive)
+	return true
+}
 
 // verifyPeer は接続元プロセスの UID と実行ファイルパスを照合する。
 //   - SO_PEERCRED で UID を取得し自プロセスの UID と一致を確認（カーネル保証）

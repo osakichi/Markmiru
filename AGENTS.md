@@ -42,12 +42,12 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 - `style`（新規）— スタイル定義（Go 型）→ CSS 変数生成。プリセット・エクスポート/インポート。設計は `docs/スタイル設定設計.md`。
 - `app.go` — `App` 構造体と Wails バインドの**公開メソッド**（`OpenFiles` / `ReadFile` / `SaveFile` / `SaveFileDialog` / `ExportStyleDialog` / `ImportStyleDialog` / `SetEditMenuEnabled` / `SetSaveMenuEnabled` / `SetModeMenuEnabled` / `OpenExternalURL` / `ClipboardText` / `Quit` / `FocusWindow` / `Print` 等、OS 機能に限定）。小文字始まりは非公開（`emit` / `openFileFromIPC` 等）。`LICENSE.md` / `README.md` を `//go:embed`。
 - `config.go` — `config.json`（`os.UserConfigDir()/Markmiru/`）への設定・セッション永続化。標準ライブラリのみ。ウィンドウ状態は `saveWindowState`、セッション/スタイル/サイドバーは `beforeClose` の `persistSession`（`web.State` から生成・main で注入）が保存する。
-- `platform_*.go`（`_windows` / `_darwin` / `_linux` / `_other`）— OS 依存処理（ウィンドウ前面化・WebView フォーカス・印刷 `platformPrint` 等）をビルドタグで切替。darwin のみ cgo（Objective-C）で自前のネイティブ印刷（縦向きデフォルト）を実装し、他 OS は未処理を返して Wails `WindowPrint` にフォールバックする。`isMacOS` 等でメニューを分岐。
+- `platform_*.go`（`_windows` / `_darwin` / `_linux` / `_other`）— OS 依存処理（ウィンドウ前面化・WebView フォーカス・印刷 `platformPrint`・ネイティブメニュー項目の有効/無効の直接更新 `platformSetMenuItemsEnabled` 等）をビルドタグで切替。darwin は cgo（Objective-C）で自前のネイティブ印刷（縦向きデフォルト）を実装し、他 OS は未処理を返して Wails `WindowPrint` にフォールバックする。linux は cgo（GTK3）で表示中のメニュー項目の有効/無効を直接更新する（Wails の Linux 実装がメニュー更新を捨てるため。docs §10）。`isMacOS` 等でメニューを分岐。
 - `single_instance.go` — Unix ソケット（`os.UserCacheDir()/Markmiru/`）による多重起動防止＋IPC。2 つ目の起動は既存へパスを渡して終了、既存ウィンドウを前面化。既存アプリでは `ipc:open-file` イベント→glue→`POST /tabs/open-path` でそのファイルを開く。
 
 ### WebView 表示層（`web/assets/`）
 
-- `glue.js` — WebView 内の唯一の自作 JS。「仕組み的グルー」に限定: mermaid 再描画、編集オーバーレイのスクロール同期、保存前の未送信編集 flush（menu:save/saveAs・Ctrl+S フォールバック）、ネイティブメニュー/IPC の Wails イベント（`window.runtime.EventsOn('menu:*' / 'ipc:open-file' / 'app:request-quit')`）→ htmx.ajax ブリッジ、ダイアログのフォーカス/Esc/危険確認の遅延活性化、ページ内検索（CSS Custom Highlight API）、外部リンクの遷移制御、印刷トリガ、設定の対入力同期、右クリックメニュー（サーバ断片の注入・位置決め・選択とキャレットの保持・実行）。
+- `glue.js` — WebView 内の唯一の自作 JS。「仕組み的グルー」に限定: mermaid 再描画、編集オーバーレイのスクロール同期、保存前の未送信編集 flush（menu:save/saveAs・Ctrl+S フォールバック）、ネイティブメニュー/IPC の Wails イベント（`window.runtime.EventsOn('menu:*' / 'ipc:open-file' / 'app:request-quit')`）→ htmx.ajax ブリッジ、取り消し／やり直しのキー処理（Ctrl+Z / Ctrl+Shift+Z。Linux の WebKitGTK に既定バインドが無いため。3 OS 共通）、ダイアログのフォーカス/Esc/危険確認の遅延活性化、ページ内検索（CSS Custom Highlight API）、外部リンクの遷移制御、印刷トリガ、設定の対入力同期、右クリックメニュー（サーバ断片の注入・位置決め・選択とキャレットの保持・実行）。
 - htmx / mermaid.min.js — 既製ライブラリ（vendoring 済み）。htmx が操作→Go 要求→DOM 断片差し替えを担う。
 - CSS（`app.css` / `markdown.css`）＋ 同梱フォント（`fonts.css` / `fonts/*.woff2`）。本文配色・組版は Go 出力のスタイル変数（`#styleblock`）。
 
@@ -81,7 +81,7 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 - **最終目標: Windows / macOS / Linux（デスクトップ3種）**
 - モバイル（iPhone / Android）は**対象外**（Wails 採用に伴いモバイル不可。この前提で確定）
 - 配布形態: ビルド成果物をまとめた**簡素なアーカイブ**（Windows: `.exe` を ZIP／macOS: `.app` を ZIP／Linux: バイナリを tar.gz）。インストーラ形式は採らない
-- **右クリックメニューは Windows（WebView2）・macOS（WKWebView）で実機検証済み。Linux（WebKitGTK）は未検証。** Linux で検証・修正する際は `docs/アーキテクチャ・画面設計.md` §10「右クリックメニューのプラットフォーム別確認ポイント」を必ず参照すること（WebView 依存で挙動が分かれ得る確認項目と、コード確認済みで対処不要な項目を分けて記載）
+- **右クリックメニューは Windows（WebView2）・macOS（WKWebView）・Linux（WebKitGTK）の 3 OS すべてで実機検証済み**（Linux は 2026-08-21。Ubuntu 24.04・WebKitGTK 4.1）。右クリックメニュー自体の不具合は無く、検証中に見つかった Linux 固有の 2 件（Ctrl+Z / Ctrl+Y が効かない・ネイティブメニューの有効/無効の更新が反映されない）は 2026-08-29 に対応済み。OS ごとの検証結果と原因・対処は `docs/アーキテクチャ・画面設計.md` §10「右クリックメニューのプラットフォーム別確認ポイント」および「既知の制約・課題」を参照
 
 ## 技術スタック
 

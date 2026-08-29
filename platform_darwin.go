@@ -110,6 +110,10 @@ func platformPrint() bool {
 func platformGrantForeground() {}
 func focusWebview()            {}
 
+// platformSetMenuItemsEnabled は Linux 専用（Wails のメニュー更新が効かないため GTK 項目を直接更新する）。
+// この OS では未処理（false）を返し、呼び出し側が Wails の MenuUpdateApplicationMenu を使う。
+func platformSetMenuItemsEnabled(_ []string, _ bool) bool { return false }
+
 // platformLinuxOptions は Linux 固有の Wails オプション（ウィンドウアイコン等）。この OS では nil。
 func platformLinuxOptions() *linux.Options { return nil }
 

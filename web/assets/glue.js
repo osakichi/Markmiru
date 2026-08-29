@@ -96,6 +96,25 @@
       editExec('selectAll')
       return
     }
+    // Ctrl+Z / Ctrl+Shift+Z（Cmd+Z / Cmd+Shift+Z）: 取り消し / やり直し。
+    // Linux（WebKitGTK）は GTK3 由来のキーバインドに取り消し／やり直しが無く、キーが編集コマンドへ
+    // 変換されないため何も起きない。ここで拾ってメニューと同じ editExec（execCommand）へ流す。
+    // OS 分岐は持たない: Windows はネイティブでも動くが、メニュー「取り消し」が通るのと同じ
+    // execCommand 経路に合流するだけで結果は変わらない。macOS はネイティブ編集メニューのキー等価
+    // （Cmd+Z / Cmd+Shift+Z）が WebView へ届く前に消費するため、ここは通らず従来どおり。
+    // やり直しに Ctrl+Y を割り当てないのは、macOS では Ctrl+Y が入力欄の yank（AppKit の
+    // 標準キーバインド）で、横取りすると OS 既定の動作を壊すため（メニュー表記も Ctrl+Shift+Z）。
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'z' || e.key === 'Z')) {
+      // IME 変換中は変換の取り消しを奪わない。本文以外の入力欄（検索バー・設定）はその欄自身の
+      // 取り消しに任せる（Ctrl+A と同じ考え方）。
+      if (e.isComposing) return
+      var el = document.activeElement
+      var elTag = el && el.tagName
+      if ((elTag === 'INPUT' || elTag === 'TEXTAREA') && !(el.classList && el.classList.contains('editor-input'))) return
+      e.preventDefault()
+      editExec(e.shiftKey ? 'redo' : 'undo')
+      return
+    }
     // Enter: ダイアログに既定ボタン（安全な既定動作。例: 保存して閉じる）があれば実行する。
     // 危険な承諾ボタン（外部画像の「表示する」等）には既定を付けないため Enter では発火しない。
     if (e.key === 'Enter') {

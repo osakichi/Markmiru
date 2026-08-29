@@ -29,3 +29,7 @@ func platformRaiseWindow(_ *App) {}
 // platformPrint は macOS 専用のネイティブ印刷実装。この OS では未処理（false）を返し、
 // 呼び出し側が Wails の WindowPrint（WebView 内で window.print() を実行）へフォールバックする。
 func platformPrint() bool { return false }
+
+// platformSetMenuItemsEnabled は Linux 専用（Wails のメニュー更新が効かないため GTK 項目を直接更新する）。
+// この OS では未処理（false）を返し、呼び出し側が Wails の MenuUpdateApplicationMenu を使う。
+func platformSetMenuItemsEnabled(_ []string, _ bool) bool { return false }

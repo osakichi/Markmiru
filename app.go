@@ -88,8 +88,17 @@ func (a *App) setMenuItemsEnabled(items []*menu.MenuItem, enabled bool) {
 	if a.ctx == nil || len(items) == 0 {
 		return
 	}
+	labels := make([]string, 0, len(items))
 	for _, it := range items {
 		it.Disabled = !enabled
+		labels = append(labels, it.Label)
+	}
+	// Linux は Wails の MenuUpdateApplicationMenu が何もしないため、表示中のネイティブ項目を
+	// 直接更新する（platform_linux.go）。処理した OS ではここで終わり、それ以外（Windows /
+	// macOS）は未処理（false）が返るので従来どおり Wails のメニュー再描画に任せる。
+	// Disabled の更新自体は全 OS で行い、どちらの経路でも状態の出所を 1 つに保つ。
+	if platformSetMenuItemsEnabled(labels, enabled) {
+		return
 	}
 	runtime.MenuUpdateApplicationMenu(a.ctx)
 }
