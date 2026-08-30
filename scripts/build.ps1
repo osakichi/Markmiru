@@ -48,15 +48,22 @@ finally {
 
 # Package the executable into a distributable ZIP under dist/ (created if missing).
 # Distribution policy: ship a simple ZIP containing just the .exe (Windows).
-# Name: Markmiru-windows-amd64-<sha>-<yyyymmdd>.zip
+# Name: Markmiru-windows-<arch>-<sha>-<yyyymmdd>.zip
+#   - <arch>      = Go's name for the architecture (amd64 / arm64), same on all three OSes
 #   - <sha>       = same git short SHA used as the version above (with -dirty if applicable)
 #   - <yyyymmdd>  = the date this ZIP is produced
 # dist/ is git-ignored (distributables are not committed). Runs only on a successful build
 # (a build failure throws above and stops the script before reaching here).
+#
+# go env GOARCH returns the GOARCH environment variable when set, otherwise the host value.
+# That is the same rule wails build uses to pick its target (cmd/wails/flags/build.go), so the
+# name always matches what was actually built.
+$arch = (& go env GOARCH | Out-String).Trim()
+if (-not $arch) { throw 'go env GOARCH returned nothing' }
 $dateStamp = Get-Date -Format 'yyyyMMdd'
 $distDir = Join-Path $root 'dist'
 New-Item -ItemType Directory -Force -Path $distDir | Out-Null
-$zipPath = Join-Path $distDir "Markmiru-windows-amd64-$sha-$dateStamp.zip"
+$zipPath = Join-Path $distDir "Markmiru-windows-$arch-$sha-$dateStamp.zip"
 if (Test-Path $zipPath) { Remove-Item -Force $zipPath }
 Compress-Archive -Path (Join-Path $root 'build\bin\Markmiru.exe') -DestinationPath $zipPath
 Write-Host "Packaged: $zipPath"

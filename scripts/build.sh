@@ -61,7 +61,12 @@ date_stamp="$(date +%Y%m%d)"
 dist_dir="$root/dist"
 mkdir -p "$dist_dir"
 os="$(uname -s)"
-arch="$(uname -m)"
+# <arch> は Go 表記（amd64 / arm64）で 3 OS 揃える。uname -m は表記が割れるため使わない
+# （Linux の 64bit x86 は x86_64、ARM は aarch64。同じものを指すが Go 表記と一致しない）。
+# go env GOARCH は GOARCH 環境変数があればそれ、無ければホストの値を返す。これは
+# wails build がターゲットを決める規則（cmd/wails/flags/build.go）と同じため、名前が実体とずれない。
+arch="$(go env GOARCH)"
+[ -n "$arch" ] || { echo "error: go env GOARCH が空です" >&2; exit 1; }
 if [ "$os" = "Darwin" ]; then
   # macOS: .app フォルダごと配布。ditto で固める（シンボリックリンク・実行権限を保持。
   # 素の zip や非 macOS 上での圧縮はバンドルを壊すため不可）。
