@@ -30,6 +30,13 @@
     currentTheme = theme
   }
 
+  // 図の ID は mermaid.run() に任せず自前で採番する。run() の採番は非決定モード（既定）だと
+  // `Date.now()` を返すだけで（mermaid 11.15.0 の InitIDGenerator）、**同じミリ秒に描画された図
+  // どうしで ID が衝突する**。mermaid は描画中の一時要素を `"d" + ID` という id で document.body
+  // 直下に置き `select("#d" + ID)` で引き当てるため、衝突すると別の図の一時要素を掴み、
+  // 描画結果が別の図の枠に入る（＝図がずれる。2026-09-03 に Windows で再現）。
+  // 連番を足せば同一ミリ秒でも一意になり、複数の run が重なっても衝突しない。
+  var mermaidSeq = 0
   function runMermaid() {
     if (!window.mermaid) return
     var nodes = Array.prototype.slice.call(
@@ -37,8 +44,25 @@
     )
     if (!nodes.length) return
     ensureMermaid(mermaidTheme())
+    for (var i = 0; i < nodes.length; i++) renderMermaid(nodes[i])
+  }
+
+  // renderMermaid は 1 図を描画して枠へ差し込む（run() が内部で行うのと同じ手順）。
+  // data-processed は await の前に付ける（run() と同じ）。これで二重描画を防ぐ。
+  function renderMermaid(node) {
+    node.setAttribute('data-processed', 'true')
+    var src = node.textContent // サーバはエスケープ済み。textContent で元の記述に戻る
+    var id = 'mermaid-' + Date.now() + '-' + mermaidSeq++
     try {
-      window.mermaid.run({ nodes: nodes })
+      // 第 3 引数に枠を渡すのは run() と同じ（本文の CSS 下で文字幅を測らせ、レイアウトを揃える）。
+      var p = window.mermaid.render(id, src, node)
+      if (!p || !p.then) return
+      p.then(function (out) {
+        node.innerHTML = out.svg
+        if (out.bindFunctions) out.bindFunctions(node)
+      }).catch(function (e) {
+        console.error('mermaid render error:', e)
+      })
     } catch (e) {
       console.error('mermaid render error:', e)
     }
