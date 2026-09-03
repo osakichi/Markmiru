@@ -37,6 +37,7 @@
   // 描画結果が別の図の枠に入る（＝図がずれる。2026-09-03 に Windows で再現）。
   // 連番を足せば同一ミリ秒でも一意になり、複数の run が重なっても衝突しない。
   var mermaidSeq = 0
+  var mermaidChain = Promise.resolve() // 直列化用のチェーン（下の queueMermaid が繋いでいく）
   function runMermaid() {
     if (!window.mermaid) return
     var nodes = Array.prototype.slice.call(
@@ -44,25 +45,44 @@
     )
     if (!nodes.length) return
     ensureMermaid(mermaidTheme())
-    for (var i = 0; i < nodes.length; i++) renderMermaid(nodes[i])
+    for (var i = 0; i < nodes.length; i++) queueMermaid(nodes[i])
+  }
+
+  // queueMermaid は 1 図を描画キューへ積む。描画は**直列**（前の図の完了後に次を描く）で、
+  // run() が図ごとに await するのと同じ順序性を保つ——並行に投げても ID は衝突しないが、
+  // mermaid 内部の共有状態に依存する部分で挙動が変わり得るため、上流の実行順に合わせる。
+  // data-processed はキューへ積む時点で付ける（run() が await の前に付けるのと同じ）。
+  // 描画完了を待たずに付くので、重なって走る runMermaid が同じ図を二重に積むことはない。
+  // 末尾の catch は保険。チェーンが reject のまま残ると以降の .then が実行されず、
+  // 「それ以降どの図も描画されない」状態が続いてしまうため、必ず解決状態へ戻す。
+  function queueMermaid(node) {
+    node.setAttribute('data-processed', 'true')
+    mermaidChain = mermaidChain
+      .then(function () {
+        return renderMermaid(node)
+      })
+      .catch(function (e) {
+        console.error('mermaid queue error:', e)
+      })
   }
 
   // renderMermaid は 1 図を描画して枠へ差し込む（run() が内部で行うのと同じ手順）。
-  // data-processed は await の前に付ける（run() と同じ）。これで二重描画を防ぐ。
+  // 1 図の失敗で後続を止めないよう、失敗は握りつぶしてログのみ出す（run() と同じ扱い）。
   function renderMermaid(node) {
-    node.setAttribute('data-processed', 'true')
     var src = node.textContent // サーバはエスケープ済み。textContent で元の記述に戻る
     var id = 'mermaid-' + Date.now() + '-' + mermaidSeq++
     try {
       // 第 3 引数に枠を渡すのは run() と同じ（本文の CSS 下で文字幅を測らせ、レイアウトを揃える）。
       var p = window.mermaid.render(id, src, node)
       if (!p || !p.then) return
-      p.then(function (out) {
-        node.innerHTML = out.svg
-        if (out.bindFunctions) out.bindFunctions(node)
-      }).catch(function (e) {
-        console.error('mermaid render error:', e)
-      })
+      return p
+        .then(function (out) {
+          node.innerHTML = out.svg
+          if (out.bindFunctions) out.bindFunctions(node)
+        })
+        .catch(function (e) {
+          console.error('mermaid render error:', e)
+        })
     } catch (e) {
       console.error('mermaid render error:', e)
     }
@@ -362,13 +382,26 @@
   }
 
   // --- 5. 印刷トリガ -----------------------------------------------------
-  // /active/print が HX-Trigger-After-Settle: do-print を返す。mermaid 描画完了を待って印刷。
+  // /active/print が HX-Trigger-After-Settle: do-print を返す。htmx は settle 後に
+  // htmx:afterSettle を発火してから後設定トリガを流すため（afterSettleCallback）、do-print を
+  // 受けた時点で mermaid の描画は既にキューへ積まれている。そこで**キューの完了を待ってから**
+  // 印刷する（以前は 250ms の固定待ちで、図が多い文書や遅い環境では未描画のまま印刷され得た）。
+  // 描画が返らない場合に印刷できなくならないよう、待ち時間には上限を設ける。
   // macOS の WKWebView は window.print() を無視するため Go の Print へ委譲する
   // （macOS は自前のネイティブ印刷パネル、Windows/Linux は従来どおり window.print() が実行される）。
+  var PRINT_MAX_WAIT = 5000
   document.body.addEventListener('do-print', function () {
-    setTimeout(function () {
-      if (window.go) window.go.main.App.Print()
-    }, 250)
+    var giveUp = new Promise(function (resolve) {
+      setTimeout(resolve, PRINT_MAX_WAIT)
+    })
+    Promise.race([mermaidChain, giveUp]).then(function () {
+      // 差し込んだ SVG のレイアウトが済んでから印刷する（1 フレーム待つ）。
+      requestAnimationFrame(function () {
+        setTimeout(function () {
+          if (window.go) window.go.main.App.Print()
+        }, 50)
+      })
+    })
   })
 
   // --- 6. ページ内検索（Ctrl+F / Cmd+F）---------------------------------
