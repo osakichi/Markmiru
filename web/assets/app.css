@@ -136,11 +136,6 @@ body {
   overflow: auto;
   background: #f6f8fa;
 }
-.settings-title {
-  padding: 0.6rem 0.75rem;
-  font-weight: 600;
-  border-bottom: 1px solid #d0d7de;
-}
 .settings-section {
   padding: 0.6rem 0.75rem;
   border-bottom: 1px solid #e6e9ee;
