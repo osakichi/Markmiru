@@ -188,14 +188,19 @@ func main() {
 		}
 		args = append(args, p)
 	}
-	if ensureSingleInstance(app, args) {
+	// bindings 生成の一時バイナリではここから先の副作用を起こさない（isBindingsBuild）。
+	// 一時バイナリは Wails CLI がビルド段で実行するもので、起動中のアプリへ IPC 接続して
+	// しまう・存在しないパスで .desktop を上書きしてしまう等の実害がある。docs §10 参照。
+	if !isBindingsBuild && ensureSingleInstance(app, args) {
 		os.Exit(0)
 	}
 	app.startupFiles = args
 
 	// Linux: シェル（GNOME 等）がドック・Alt+Tab・アプリ一覧のアイコンを解決できるよう、
 	// ~/.local/share 配下へ .desktop とアイコンを自動登録する（他 OS は no-op）。
-	registerDesktopIntegration()
+	if !isBindingsBuild {
+		registerDesktopIntegration()
+	}
 
 	configDir, _ := os.UserConfigDir()
 

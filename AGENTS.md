@@ -16,6 +16,7 @@
 - **開発時の補助コマンド**（最終確認は上記の正式ビルドで行うこと）:
   - `wails dev` … 開発実行に使う。ただし**本プロジェクトでは HMR（Hot Module Replacement）を開発中も使用しない**方針。素早い反映が要るときは Go 再ビルド＋WebView リロードで行う（フロントエンドのバンドル工程が無く、そもそもフロント HMR は存在しない）。
   - Go のコンパイル確認のみ: `go build ./...`（成果物を残さない）。
+  - **`bindings_on.go` は通常の `go build ./...` / `go vet ./...` ではコンパイルされない**（`bindings` タグ付きのときだけ有効）。`main.go` の `isBindingsBuild` 周りや同ファイルを変更したら `go build -tags bindings .` でも確認する（出力が要らなければ `-o` を付けずに実行するとプロジェクト直下を汚すため、`go build -tags bindings -o build/bin/bindings-check .` のように出力先を指定する）。
   - `web` パッケージのテスト: `go test ./web/`（HTTP ハンドラの単体テスト）。全体は `go test ./...`。整形は `gofmt -w`、静的検査は `go vet ./...`。
   - 検証は正式ビルドで生成した成果物の手動動作確認でも行う。
 
@@ -139,8 +140,10 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 ## ビルドツールチェーン（Go のみ）
 
 - 本アプリは Go-SSR（Wails `AssetServer.Handler`）で、**ビルドすべきフロントエンドは無い**（`wails.json` にフロントフックは無く、`wails build` は "No Install command. Skipping." / "No Build command. Skipping." と表示して Go のみをコンパイルする。`frontend/wailsjs` は `wails build` が再生成するバインディングで `.gitignore` により git 管理外）。
+- **`frontend/` ディレクトリ自体は `frontend/.gitkeep` で git 管理下に置く**（配下は `.gitignore` で無視）。`wails build` はフロントのビルド段の冒頭でこのディレクトリの存在を無条件に検査し、無ければ `frontend directory '...' does not exist` で失敗する（`pkg/commands/build/base.go` の `BuildFrontend`。`frontend:install` / `frontend:build` の有無を見るより前に落ちるため npm とは無関係）。**通常はその手前の bindings 生成が副産物としてこのディレクトリを作るが、それに依存してはならない**（下項の理由でスキップされ得る）。プレースホルダーが無いと新規 clone でビルドが失敗する。
 - 必要なのは **Go（`go.mod` の `go 1.25`）・Wails CLI v2・git** のみ。`scripts/build.ps1` / `scripts/build.sh` は git SHA を埋め込み `wails build` を実行して `dist/` に ZIP を出力する。**両スクリプトは版取得に `git rev-parse` / `git status` を使うため、git リポジトリの作業ツリー内で実行する必要がある**（非 git 環境では SHA 取得に失敗して停止。版を埋め込まない素の `wails build`〔版は `dev`〕は非 git でも可）。
 - **macOS は SDK 11 以上が必須**: Wails v2 の `WailsContext.m` が macOS 11 で追加された通知定数（`UNNotificationPresentationOptionList` / `Banner`）を参照するため、Command Line Tools の SDK が 10.15 以前だと undeclared identifier でコンパイル失敗する（`@available` は実行時チェックのみでコンパイルは通らない）。`xcrun --show-sdk-version` で確認し、古ければ CLT を入れ直す（2026-07 に古い Intel Mac で発生・CLT 再インストールで解消済み）。
 - **ビルドスクリプトは `wails` を固定パスで参照する**（`build.ps1`＝`%USERPROFILE%\go\bin\wails.exe` / `build.sh`＝`$HOME/go/bin/wails`。`PATH` は参照しない）。`GOPATH` / `GOBIN` を変更した環境ではそのままでは動かないため、スクリプト内のパスを環境に合わせる必要がある。
-- **node / npm は一切不要**（ビルド・実行・フォント再生成のいずれでも使わない）。`wails.json` に `frontend:install` / `frontend:build` が無いため Wails は npm を起動しない。`frontend/wailsjs`（`runtime/package.json` を含む）は **`wails build` が毎回生成する Wails のバインディング／ランタイム記述子で、npm とは無関係**（`-skipbindings` を付けても `runtime/` は生成され、かつ `frontend` ディレクトリ自体が無いとビルドはエラーになるため、削除しても次のビルドで戻る。git 管理外なので放置してよい）。
+- **node / npm は一切不要**（ビルド・実行・フォント再生成のいずれでも使わない）。`wails.json` に `frontend:install` / `frontend:build` が無いため Wails は npm を起動しない。`frontend/wailsjs`（`runtime/package.json` を含む）は **`wails build` が毎回生成する Wails のバインディング／ランタイム記述子で、npm とは無関係**（`-skipbindings` を付けても `runtime/` は `generateRuntimeWrapper` が別途生成する。git 管理外なので放置してよい）。**本プロジェクトは `wailsjs` を一切参照しない**（画面が読むのは `/assets/*` のみ、`window.go` は Wails ランタイムが `Bind` から実行時に注入する）。bindings 生成の有無で実行体は 1 バイトも変わらないことを SHA256 比較で確認済み。
+- **bindings 生成段は一時バイナリとして本アプリを実行する。** Wails CLI は `go build -tags bindings` でこのパッケージをビルドし、生成した exe をプロジェクト直下で実行する（`pkg/commands/bindings/bindings.go`）。この一時バイナリは `wails.Run` の中で bindings を書き出して終了するが、**`main()` の前段は通常どおり実行される**。そのため副作用を伴う処理は `isBindingsBuild`（`bindings_on.go` / `bindings_off.go`）で分岐して抑止している（対象は単一インスタンス IPC とデスクトップ統合。詳細は `docs/アーキテクチャ・画面設計.md` §10）。**`main()` の `wails.Run` より前に副作用のある処理を追加する場合は、この分岐に入れるか要否を検討すること。**
 - 同梱フォントの woff2 は `web/assets/fonts/` に vendoring 済み（リポジトリにコミット）。更新時のみ `scripts/vendor-fonts.sh` で再生成する（**@fontsource を jsDelivr から `curl` で直接取得**するため npm は不要。版はスクリプト内の `VERSION` で pin する）。

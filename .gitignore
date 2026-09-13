@@ -4,8 +4,12 @@ build/README.md
 /dist
 
 # フロントエンドは撤去済み（Go-SSR）。`wails build` が bindings を再生成する
-# frontend/wailsjs だけが残るため、frontend/ 全体を無視する。
-frontend/
+# frontend/wailsjs だけが残るため配下は無視する。ただしディレクトリ自体は
+# .gitkeep で追跡する——`wails build` は frontend/ の存在を必須とし、その作成は
+# bindings 生成の副産物に過ぎないため（AGENTS.md「ビルドツールチェーン」参照）。
+# ディレクトリ指定（frontend/）では配下の否定が評価されないため frontend/* とする。
+frontend/*
+!frontend/.gitkeep
 
 # 念のため（フォント再生成ツールが生成し得るディレクトリ。通常ビルドでは生じない）。
 node_modules
