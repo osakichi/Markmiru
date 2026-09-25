@@ -221,9 +221,56 @@ func Vars(p Style) []KV {
 	return vars
 }
 
+// PrintVars は印刷時に差し替える配色の CSS 変数を返す。ダーク系（colorScheme=dark）のスタイルだけが
+// 対象で、配色をライトのプリセットの値に置き換える（淡色の文字・暗い背景が紙に出るのを防ぐ）。
+// 明るいスタイルは画面の配色のまま印刷するため nil を返す。組版（フォント・サイズ・余白・見出し下線の有無）は
+// 置き換えない。本文の文字色・背景は印刷用 CSS（app.css の @media print）が別途固定する。
+func PrintVars(p Style) []KV {
+	if p.ColorScheme != "dark" {
+		return nil
+	}
+	l := Presets()[0] // ライト
+	vars := []KV{
+		{"--md-color", l.Color},
+		{"--md-bg", l.Background},
+		{"--md-link-color", l.LinkColor},
+		{"--md-marker-color", l.MarkerColor},
+		{"--md-quote-color", l.QuoteColor},
+		{"--md-quote-bg", l.QuoteBg},
+		{"--md-quote-border", l.QuoteBorder},
+		{"--md-pre-bg", l.CodeBlockBg},
+		{"--md-code-bg", l.CodeBg},
+		{"--md-hr-color", l.HrColor},
+		{"--md-border", l.BorderColor},
+		{"--md-th-bg", l.TableHeaderBg},
+		{"--md-row-odd-bg", l.RowOddBg},
+		{"--md-row-even-bg", l.RowEvenBg},
+	}
+	for i, h := range p.Headings {
+		n := i + 1
+		color := l.Color
+		if i < len(l.Headings) {
+			color = l.Headings[i].Color
+		}
+		vars = append(vars, KV{fmt.Sprintf("--md-h%d-color", n), color})
+		if h.Border {
+			vars = append(vars, KV{fmt.Sprintf("--md-h%d-border", n), "1px solid " + l.BorderColor})
+		}
+	}
+	return vars
+}
+
+// PrintCSS は PrintVars を CSS 変数のインライン文字列にする（対象外のスタイルでは空文字）。
+func PrintCSS(p Style) string {
+	return joinVars(PrintVars(p))
+}
+
 // CSS は Style を CSS 変数のインライン文字列（"k:v;k:v" 形式）にする。
 func CSS(p Style) string {
-	vars := Vars(p)
+	return joinVars(Vars(p))
+}
+
+func joinVars(vars []KV) string {
 	var b strings.Builder
 	for i, kv := range vars {
 		if i > 0 {

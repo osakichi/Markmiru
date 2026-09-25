@@ -21,6 +21,10 @@
   font-family: var(--md-font);
   text-align: left;
   word-wrap: break-word;
+  /* 控えめな文字色（脚注・遮断した外部画像の表示）。スタイル設定の項目ではなく、
+     本文の文字色を背景色へ寄せて導く（ライト/ダーク/セピア等に自動で追従）。
+     color-mix 非対応の WebView では使用側で無効になり、本文の文字色を継承する。 */
+  --md-muted: color-mix(in srgb, var(--md-color, #24292f) 70%, var(--md-bg, #ffffff));
 }
 
 /* 文書内リンクのジャンプ時、見出しが上端に張り付かないよう余白を確保。 */
@@ -202,6 +206,30 @@
   content: "🚫 外部画像（非表示） " attr(alt);
 }
 
+/* 明示的な改ページの目印（閲覧モードの画面のみ。印刷には出さない）。
+   サニタイズは div の style に改ページの宣言しか残さないため、style 付きの div は改ページとみなせる。
+   改ページの位置（前か後か）に合わせて下端または上端に点線を引く（色は区切り線と同じ）。
+   border の dotted は目が細かく実線と見分けにくいため、グラデーションで粗い点（4px の点・6px の間隔）を描く。 */
+@media screen {
+  .markdown-body div.page,
+  .markdown-body div[style*="break-after"],
+  .markdown-body div[style*="break-before"] {
+    margin: 1.5em 0;
+    background-image: repeating-linear-gradient(to right, var(--md-hr-color, #d0d7de) 0 4px, transparent 4px 10px);
+    background-size: 100% 3px;
+    background-repeat: no-repeat;
+  }
+  .markdown-body div.page,
+  .markdown-body div[style*="break-after"] {
+    padding-bottom: 3px;
+    background-position: left bottom;
+  }
+  .markdown-body div[style*="break-before"] {
+    padding-top: 3px;
+    background-position: left top;
+  }
+}
+
 /* mermaid 図は中央寄せ（背景はテーマ側） */
 .markdown-body pre.mermaid {
   background: none;
@@ -217,6 +245,10 @@
   padding-top: 0.6rem;
   font-size: 0.85em;
   color: var(--md-muted);
+}
+/* goldmark は脚注の先頭に <hr> を出力する。区切り線は上の border-top が担うため隠す（二重線の防止）。 */
+.markdown-body .footnotes > hr {
+  display: none;
 }
 .markdown-body .footnotes ol {
   margin: 0.5rem 0 0;

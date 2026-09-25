@@ -29,7 +29,7 @@
 {{define "edit-sync"}}{{.Content.Highlighted}}<div id="tabbar" hx-swap-oob="true">{{template "tabbar-inner" .}}</div>{{end}}
 
 {{/* アクティブスタイルの CSS 変数ブロック（フィールド編集のライブプレビュー応答）。 */}}
-{{define "styleblock"}}<style id="styleblock">#content{ {{.StyleVars}} }</style>{{end}}
+{{define "styleblock"}}<style id="styleblock">#content{ {{.StyleVars}} }{{with .PrintVars}} @media print{ #content{ {{.}} } }{{end}}</style>{{end}}
 
 {{/* ユーザーの上書き CSS（customCSS 編集のライブプレビュー応答）。 */}}
 {{define "customcss"}}<style id="customcss">{{.CustomCSS}}</style>{{end}}
@@ -144,7 +144,7 @@
 
 {{/* スタイル変更（選択/複製/配色）の応答: 本文（#content）＋ styleblock/コードテーマ/上書きCSS/設定モーダルを OOB 更新。 */}}
 {{define "restyle"}}{{template "content" .Content}}
-<style id="styleblock" hx-swap-oob="true">#content{ {{.StyleVars}} }</style>
+<style id="styleblock" hx-swap-oob="true">#content{ {{.StyleVars}} }{{with .PrintVars}} @media print{ #content{ {{.}} } }{{end}}</style>
 <style id="markmiru-code-theme" hx-swap-oob="true">{{.CodeCSS}}</style>
 <style id="customcss" hx-swap-oob="true">{{.CustomCSS}}</style>
 <div id="settings"{{if not .SettingsOpen}} hidden{{end}} hx-swap-oob="true">{{template "settings-modal" .}}</div>{{end}}

@@ -85,8 +85,10 @@ type shellVM struct {
 	Tabs    []tabVM
 	Content contentVM
 	// StyleVars はアクティブスタイルの CSS 変数（#content 配下が継承）。
+	// PrintVars は印刷時に差し替える配色の CSS 変数（ダーク系のスタイルのみ。他は空）。
 	// CodeCSS はコードハイライト用 CSS（chroma）。いずれも <style> に注入する。
 	StyleVars template.CSS
+	PrintVars template.CSS
 	CodeCSS   template.CSS
 	// Scheme はアクティブスタイルの colorScheme（"light"/"dark"）。
 	// glue.js が mermaid のテーマ切替に使う（#app の data-scheme として出力）。
@@ -387,6 +389,7 @@ func (s *Server) serveShell(w http.ResponseWriter, _ *http.Request) {
 		Tabs:         s.state.TabVMs(),
 		Content:      content,
 		StyleVars:    template.CSS(style.CSS(st)),
+		PrintVars:    template.CSS(style.PrintCSS(st)),
 		CodeCSS:      template.CSS(render.HighlightCSS(st.ColorScheme)),
 		Scheme:       st.ColorScheme,
 		Dialog:       dlg,
@@ -945,7 +948,7 @@ func (s *Server) serveField(w http.ResponseWriter, r *http.Request) {
 		_ = shellTmpl.ExecuteTemplate(w, "customcss", shellVM{CustomCSS: template.CSS(st.CustomCSS)})
 	default:
 		htmlHeader(w)
-		_ = shellTmpl.ExecuteTemplate(w, "styleblock", shellVM{StyleVars: template.CSS(style.CSS(st))})
+		_ = shellTmpl.ExecuteTemplate(w, "styleblock", shellVM{StyleVars: template.CSS(style.CSS(st)), PrintVars: template.CSS(style.PrintCSS(st))})
 	}
 }
 
@@ -959,7 +962,7 @@ func (s *Server) serveHeadingField(w http.ResponseWriter, r *http.Request) {
 	s.state.UpdateActiveHeadingField(n, r.PathValue("key"), r.FormValue("value"))
 	st := s.state.ActiveStyle()
 	htmlHeader(w)
-	_ = shellTmpl.ExecuteTemplate(w, "styleblock", shellVM{StyleVars: template.CSS(style.CSS(st))})
+	_ = shellTmpl.ExecuteTemplate(w, "styleblock", shellVM{StyleVars: template.CSS(style.CSS(st)), PrintVars: template.CSS(style.PrintCSS(st))})
 }
 
 // serveRename はアクティブな編集可能スタイルを改名し、設定モーダルを差し替える。
@@ -1025,6 +1028,7 @@ func (s *Server) restyle(w http.ResponseWriter) {
 	vm := shellVM{
 		Content:   content,
 		StyleVars: template.CSS(style.CSS(st)),
+		PrintVars: template.CSS(style.PrintCSS(st)),
 		CodeCSS:   template.CSS(render.HighlightCSS(st.ColorScheme)),
 		CustomCSS: template.CSS(st.CustomCSS),
 	}

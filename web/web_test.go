@@ -761,6 +761,18 @@ func TestSetStyleSwitchesActive(t *testing.T) {
 	if !strings.Contains(body, `id="markmiru-code-theme" hx-swap-oob="true"`) {
 		t.Errorf("code theme OOB missing")
 	}
+	// ダーク系は印刷用の配色（ライトのプリセットの値）を @media print で差し替える。
+	if !strings.Contains(body, "@media print{ #content{ --md-color:#24292f") {
+		t.Errorf("print vars for dark style not injected: %s", body)
+	}
+}
+
+// 明るいスタイルは画面の配色のまま印刷するため、印刷用の差し替えを出さない。
+func TestNoPrintVarsForLightStyle(t *testing.T) {
+	body := do(newH(testState()), "GET", "/").Body.String()
+	if strings.Contains(body, "@media print{ #content{") {
+		t.Errorf("light style must not emit print vars: %s", body)
+	}
 }
 
 func TestPresetNotEditableUntilDuplicate(t *testing.T) {

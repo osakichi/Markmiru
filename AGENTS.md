@@ -30,6 +30,7 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 - 信頼できない Markdown を開いても安全なよう防御を行う（HTML サニタイズ・CSP・外部リンクは確認ダイアログ後に OS ブラウザへ委譲・外部画像はファイルごとに表示確認）
 - 画像はローカルパス（相対・絶対・ルート相対）を data URI 化して表示し、外部（リモート）画像はファイルごとに表示可否を確認する。文書と別ホストを指す UNC 画像（`\\別ホスト\…`）は認証情報漏洩（別サーバへの SMB 自動認証）を防ぐため確認を出さず常に遮断する（同一ホスト UNC は許容）
 - 多重起動は防止し、2 つ目の起動は既存ウィンドウにファイルを渡して前面化する（単一インスタンス）
+- 印刷・PDF 出力は OS / WebView の印刷機能で行い、配色は紙向けに変換する（本文・見出しは全スタイルで黒。引用・表・リンク等はダーク系スタイルのみライトのプリセットの配色へ差し替え、明るいスタイルは画面の配色のまま）。改ページは生 HTML の空の `div` で指定できる（`<div class="page"></div>`＝VS Code の Markdown PDF 拡張互換／`<div style="break-after: page"></div>` 等＝Typora・ブラウザ印刷全般互換。自己終了タグ `<div class="page"/>` は非対応＝Markmiru の仕様）
 
 ## コード構成・アーキテクチャ
 
@@ -50,7 +51,7 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 
 - `glue.js` — WebView 内の唯一の自作 JS。「仕組み的グルー」に限定: mermaid 再描画、編集オーバーレイのスクロール同期、保存前の未送信編集 flush（menu:save/saveAs・Ctrl+S フォールバック）、ネイティブメニュー/IPC の Wails イベント（`window.runtime.EventsOn('menu:*' / 'ipc:open-file' / 'app:request-quit')`）→ htmx.ajax ブリッジ、取り消し／やり直しのキー処理（Ctrl+Z / Ctrl+Shift+Z。Linux の WebKitGTK に既定バインドが無いため。3 OS 共通）、ダイアログのフォーカス/Esc/危険確認の遅延活性化、ページ内検索（CSS Custom Highlight API）、外部リンクの遷移制御、印刷トリガ、設定の対入力同期、右クリックメニュー（サーバ断片の注入・位置決め・選択とキャレットの保持・実行）。
 - htmx / mermaid.min.js — 既製ライブラリ（vendoring 済み）。htmx が操作→Go 要求→DOM 断片差し替えを担う。
-- CSS（`app.css` / `markdown.css`）＋ 同梱フォント（`fonts.css` / `fonts/*.woff2`）。本文配色・組版は Go 出力のスタイル変数（`#styleblock`）。
+- CSS（`app.css` / `markdown.css`）＋ 同梱フォント（`fonts.css` / `fonts/*.woff2`）。本文配色・組版は Go 出力のスタイル変数（`#styleblock`。ダーク系スタイルでは印刷時の配色差し替え〔`style.PrintVars`〕も同じ `<style>` 内の `@media print` として出力）。
 
 ### 横断する設計上の要点
 

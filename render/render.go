@@ -570,6 +570,11 @@ func buildPolicy() *bluemonday.Policy {
 	p.AllowAttrs("align").OnElements("td", "th", "tr")
 	p.AllowAttrs("colspan", "rowspan").OnElements("td", "th")
 	p.AllowStyles("text-align").MatchingEnum("left", "right", "center").OnElements("td", "th")
+	// 明示的な改ページ（Typora・ブラウザ印刷全般の書き方）。div のみ・ページを改める値のみ許可し、
+	// 他の宣言は除去する。Markdown PDF の書き方（class="page"）は class で通り、印刷用 CSS が効かせる。
+	// 閲覧モードの目印（markdown.css）は「style 付きの div ＝改ページ」を前提にしている。
+	p.AllowStyles("break-before", "break-after").MatchingEnum("page").OnElements("div")
+	p.AllowStyles("page-break-before", "page-break-after").MatchingEnum("always").OnElements("div")
 	// リンク（rel は transform で付与済み）
 	// rel は許可しない（サニタイズ後の addExternalLinkRel で確定値を付与するため）。
 	// bluemonday は rel を許可すると外部リンクへ nofollow を自動付与してしまう。

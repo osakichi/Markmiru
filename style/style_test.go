@@ -92,6 +92,52 @@ func TestVarsLinkUnderlineModes(t *testing.T) {
 	}
 }
 
+// ダーク系は配色だけをライトのプリセットの値へ差し替え、組版と見出し下線の有無は元のまま。
+func TestPrintVarsDark(t *testing.T) {
+	light, dark := Presets()[0], Presets()[1]
+	dark.Headings[0].Border = true
+	dark.Headings[1].Border = false
+	m := map[string]string{}
+	for _, kv := range PrintVars(dark) {
+		m[kv.Key] = kv.Value
+	}
+	for k, want := range map[string]string{
+		"--md-color":        light.Color,
+		"--md-quote-bg":     light.QuoteBg,
+		"--md-quote-color":  light.QuoteColor,
+		"--md-link-color":   light.LinkColor,
+		"--md-marker-color": light.MarkerColor,
+		"--md-th-bg":        light.TableHeaderBg,
+		"--md-hr-color":     light.HrColor,
+		"--md-h1-color":     light.Headings[0].Color,
+		"--md-h1-border":    "1px solid " + light.BorderColor,
+	} {
+		if m[k] != want {
+			t.Errorf("%s = %q, want %q", k, m[k], want)
+		}
+	}
+	if _, ok := m["--md-h2-border"]; ok {
+		t.Errorf("heading without border must not get a print border")
+	}
+	for _, k := range []string{"--md-font", "--md-font-size", "--md-max-width", "--md-h1-size"} {
+		if _, ok := m[k]; ok {
+			t.Errorf("layout var %s must not be replaced for print", k)
+		}
+	}
+}
+
+// 明るいスタイル（light 以外の colorScheme）は差し替えない。
+func TestPrintVarsLight(t *testing.T) {
+	for _, p := range Presets() {
+		if p.ColorScheme == "dark" {
+			continue
+		}
+		if PrintVars(p) != nil || PrintCSS(p) != "" {
+			t.Errorf("%s: light style must not have print vars", p.ID)
+		}
+	}
+}
+
 func TestCSSStringOrderAndJoin(t *testing.T) {
 	css := CSS(Presets()[0])
 	if !strings.HasPrefix(css, "--md-font:") {

@@ -9,7 +9,7 @@
   <!-- 同梱フォント（Noto Sans JP / Serif JP / Sans Mono, OFL）。スタイル変数のフォント指定が参照する。 -->
   <link rel="stylesheet" href="/assets/fonts.css" />
   <!-- アクティブスタイルの CSS 変数（Go の style.CSS）。#content 配下（.preview-scroll/.markdown-body）が継承する。 -->
-  <style id="styleblock">#content{ {{.StyleVars}} }</style>
+  <style id="styleblock">#content{ {{.StyleVars}} }{{with .PrintVars}} @media print{ #content{ {{.}} } }{{end}}</style>
   <!-- コードハイライト CSS（Go の render.HighlightCSS。chroma クラス、colorScheme 連動）。 -->
   <style id="markmiru-code-theme">{{.CodeCSS}}</style>
   <!-- 印刷用のライトなコード配色（ダークスタイルでも印刷は印刷向け＝ライトに揃える）。 -->

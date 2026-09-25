@@ -515,7 +515,9 @@ body {
  * 印刷 / PDF 出力用（設計: docs/スタイル設定設計.md §5.2）。
  * - アプリの枠（タブバー/サイドバー/設定/エディタ/オーバーレイ）を隠し、本文のみ印刷。
  * - スクロールコンテナの height/overflow を解除しないと 2 ページ目以降が空白になる。
- * - 配色は印刷向け（紙=白・濃色文字）に変換する。
+ * - 配色は印刷向け（紙=白・濃色文字）に変換する。ダーク系スタイルの引用・表・リンク・区切り線・
+ *   リストのマーカー等の色は、Go が #styleblock に出す @media print の変数（style.PrintVars）が
+ *   ライトのプリセットの配色に差し替える（明るいスタイルは画面の配色のまま）。
  */
 @media print {
   #tabbar,
@@ -546,6 +548,11 @@ body {
   .markdown-body pre,
   .markdown-body table {
     overflow: visible !important;
+  }
+  /* 明示的な改ページ（VS Code Markdown PDF の書き方 <div class="page"></div>）。
+     style 属性での指定（Typora・ブラウザ印刷全般）はサニタイズを通った style がそのまま効く。 */
+  .markdown-body div.page {
+    break-after: page;
   }
   /* 印刷向け配色（紙=白背景・濃色文字） */
   .preview-scroll,

@@ -91,6 +91,47 @@ func TestJavascriptHrefRemoved(t *testing.T) {
 	}
 }
 
+// 明示的な改ページ: style（Typora・ブラウザ印刷全般）と class="page"（Markdown PDF）の両方が残る。
+func TestPageBreakKept(t *testing.T) {
+	cases := map[string]string{
+		`<div style="break-after: page"></div>`:                            `<div style="break-after: page"></div>`,
+		`<div style="page-break-after: always"></div>`:                     `<div style="page-break-after: always"></div>`,
+		`<div style="break-before: page"></div>`:                           `<div style="break-before: page"></div>`,
+		`<div style="page-break-before: always"></div>`:                    `<div style="page-break-before: always"></div>`,
+		`<div style="page-break-after: always; break-after: page;"></div>`: `<div style="page-break-after: always; break-after: page"></div>`,
+		`<div class="page"></div>`:                                         `<div class="page"></div>`,
+	}
+	for in, want := range cases {
+		html := mustRender(t, "A\n\n"+in+"\n\nB\n", Options{}).HTML
+		if !strings.Contains(html, want) {
+			t.Errorf("page break must be kept: in=%q want %q, got: %s", in, want, html)
+		}
+	}
+}
+
+// 改ページ以外の宣言・値や div 以外の要素の style は除去する（任意の CSS を差し込ませない）。
+func TestPageBreakStyleRestricted(t *testing.T) {
+	cases := map[string]string{
+		`<div style="break-after: page; color: red; background: url(https://attacker/x.png)"></div>`: `<div style="break-after: page"></div>`,
+		`<div style="break-after: avoid"></div>`:                                                     `<div></div>`,
+		`<div style="page-break-after: auto"></div>`:                                                 `<div></div>`,
+		`<div style="position: fixed; inset: 0"></div>`:                                              `<div></div>`,
+		`<p style="break-after: page">x</p>`:                                                         `<p>x</p>`,
+		`<span style="break-after: page">x</span>`:                                                   `<span>x</span>`,
+	}
+	for in, want := range cases {
+		html := mustRender(t, in+"\n", Options{}).HTML
+		if !strings.Contains(html, want) {
+			t.Errorf("disallowed style must be stripped: in=%q want %q, got: %s", in, want, html)
+		}
+		for _, bad := range []string{"color", "url(", "attacker", "position", "avoid", "auto"} {
+			if strings.Contains(html, bad) {
+				t.Errorf("disallowed style %q remains: in=%q, got: %s", bad, in, html)
+			}
+		}
+	}
+}
+
 func TestExternalLinkRel(t *testing.T) {
 	html := mustRender(t, "[x](https://example.com)\n", Options{}).HTML
 	if !strings.Contains(html, `rel="noopener noreferrer"`) {
