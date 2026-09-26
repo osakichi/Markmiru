@@ -81,6 +81,11 @@ var policy = buildPolicy()
 
 // RenderMarkdown は Markdown を安全な HTML へ変換する（mermaid はプレースホルダのまま返る）。
 func RenderMarkdown(src string, opts Options) (Result, error) {
+	// UTF-8 の BOM は描画の前に取り除く（残すと先頭行が行頭から始まらないとみなされ、
+	// 先頭の見出し等が段落として描画される）。ファイルの BOM は読み込み時に web パッケージが
+	// 本文から除いて保存時に付け直す（web/textformat.go）ため、ここは貼り付け等で本文に
+	// 紛れ込んだ場合の防御。
+	src = strings.TrimPrefix(src, utf8BOM)
 	var buf bytes.Buffer
 	if err := md.Convert([]byte(src), &buf); err != nil {
 		return Result{}, err
@@ -143,10 +148,18 @@ var editorMarkdownLexer = chroma.Coalesce(chroma.MustNewLexer(
 	},
 ))
 
+// utf8BOM は UTF-8 の BOM（U+FEFF）。Windows の一部のエディタが保存時にファイル先頭へ付ける。
+const utf8BOM = string(rune(0xFEFF))
+
 // HighlightInner は編集オーバーレイ用に、Markdown を専用の簡易レキサ（editorMarkdownLexer）で
 // クラス付きトークン列（<pre> 無し）にして返す。呼び出し側が <pre class="chroma hl"> で包む。
 // 色は #markmiru-code-theme（chroma クラス）が付ける。
 func HighlightInner(code string) string {
+	// BOM はそのまま先頭に残し（textarea と文字の並びを揃えるため。幅は 0）、それ以降を
+	// ハイライトする（残したまま字句解析すると先頭の見出しが行頭扱いにならない）。
+	if rest, ok := strings.CutPrefix(code, utf8BOM); ok {
+		return utf8BOM + HighlightInner(rest)
+	}
 	iterator, err := editorMarkdownLexer.Tokenise(nil, code)
 	if err != nil {
 		return html.EscapeString(code)

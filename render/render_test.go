@@ -363,3 +363,23 @@ func TestHighlightCSSNonEmpty(t *testing.T) {
 		t.Errorf("expected non-empty dark highlight CSS")
 	}
 }
+
+// UTF-8 BOM 付きの文書でも、先頭の見出しは見出しとして描画される（BOM は描画に出さない）。
+func TestBOMStrippedForRendering(t *testing.T) {
+	html := mustRender(t, "\uFEFF# 見出し\n\n本文\n", Options{}).HTML
+	if !strings.Contains(html, `<h1 id="見出し">見出し</h1>`) {
+		t.Errorf("heading after BOM should render as h1, got: %q", html)
+	}
+	if strings.Contains(html, "\uFEFF") {
+		t.Errorf("BOM must not appear in rendered HTML, got: %q", html)
+	}
+}
+
+// 編集オーバーレイは BOM を先頭に残して textarea と文字を揃え、以降は BOM 無しと同じくハイライトする。
+func TestBOMKeptInEditorHighlight(t *testing.T) {
+	got := HighlightInner("\uFEFF# 見出し\n本文")
+	want := "\uFEFF" + HighlightInner("# 見出し\n本文")
+	if got != want {
+		t.Errorf("editor highlight with BOM = %q, want %q", got, want)
+	}
+}

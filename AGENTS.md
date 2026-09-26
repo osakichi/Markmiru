@@ -30,6 +30,8 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 - 信頼できない Markdown を開いても安全なよう防御を行う（HTML サニタイズ・CSP・外部リンクは確認ダイアログ後に OS ブラウザへ委譲・外部画像はファイルごとに表示確認）
 - 画像はローカルパス（相対・絶対・ルート相対）を data URI 化して表示し、外部（リモート）画像はファイルごとに表示可否を確認する。文書と別ホストを指す UNC 画像（`\\別ホスト\…`）は認証情報漏洩（別サーバへの SMB 自動認証）を防ぐため確認を出さず常に遮断する（同一ホスト UNC は許容）
 - 多重起動は防止し、2 つ目の起動は既存ウィンドウにファイルを渡して前面化する（単一インスタンス）
+- 外部で変更されたファイルの検知（監視）は行わない。取り込みはユーザーが明示的に行う「再読み込み」（ファイル → 再読み込み／Ctrl+R〔macOS は Cmd+R〕／右クリックメニュー）で、表示中のタブのファイルを読み直す。Markmiru 上に未保存の変更があれば「破棄して再読み込み／キャンセル」を確認する（無題・読み取り専用タブは対象外。詳細は `docs/アーキテクチャ・画面設計.md` §5.4）
+- 文字コードは UTF-8 のみ対応（仕様）。保存時の BOM の有無と改行コード（CRLF / LF。混在時は数の多い方）は元のファイルと同じにし、新規作成は BOM なし・LF。読み込み時に BOM を除き改行を LF にそろえた本文と書式（`Tab.Format`）に分け、保存時に戻す（`web/textformat.go`。編集モードの textarea が改行を LF にそろえるため。詳細は `docs/アーキテクチャ・画面設計.md` §5.2）
 - 印刷・PDF 出力は OS / WebView の印刷機能で行い、配色は紙向けに変換する（本文・見出しは全スタイルで黒。引用・表・リンク等はダーク系スタイルのみライトのプリセットの配色へ差し替え、明るいスタイルは画面の配色のまま）。改ページは生 HTML の空の `div` で指定できる（`<div class="page"></div>`＝VS Code の Markdown PDF 拡張互換／`<div style="break-after: page"></div>` 等＝Typora・ブラウザ印刷全般互換。自己終了タグ `<div class="page"/>` は非対応＝Markmiru の仕様）
 
 ## コード構成・アーキテクチャ
@@ -42,7 +44,7 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 - `web`（新規パッケージ）— **Go-SSR の中心**。`http.Handler`（`web.go`：全 htmx エンドポイント＋CSP ミドルウェア）、`html/template` フラグメント（`web/templates/*.html`）、アプリ状態（`web/state.go`：タブ集合／アクティブ／dirty／セッション／スタイル）、静的アセット（`web/assets/`：`glue.js` / `htmx.min.js` / `mermaid.min.js` / CSS / 同梱フォント）。OS 連携は `web.Host` インタフェース経由で `main` の `webHost` アダプタが `app.go` のメソッドへ委譲する。
 - `render`（新規）— 描画パイプライン **goldmark（GFM・脚注）→ chroma（コードハイライト）→ bluemonday（サニタイズ）**。mermaid はプレースホルダのまま返し WebView の mermaid.js が描画。ローカル画像の data URI 化・外部画像の遮断制御もここ。
 - `style`（新規）— スタイル定義（Go 型）→ CSS 変数生成。プリセット・エクスポート/インポート。設計は `docs/スタイル設定設計.md`。
-- `app.go` — `App` 構造体と Wails バインドの**公開メソッド**（`OpenFiles` / `ReadFile` / `SaveFile` / `SaveFileDialog` / `ExportStyleDialog` / `ImportStyleDialog` / `SetEditMenuEnabled` / `SetSaveMenuEnabled` / `SetModeMenuEnabled` / `OpenExternalURL` / `ClipboardText` / `Quit` / `FocusWindow` / `Print` 等、OS 機能に限定）。小文字始まりは非公開（`emit` / `openFileFromIPC` 等）。`LICENSE.md` / `README.md` を `//go:embed`。
+- `app.go` — `App` 構造体と Wails バインドの**公開メソッド**（`OpenFiles` / `ReadFile` / `SaveFile` / `SaveFileDialog` / `ExportStyleDialog` / `ImportStyleDialog` / `SetEditMenuEnabled` / `SetSaveMenuEnabled` / `SetModeMenuEnabled` / `SetReloadMenuEnabled` / `OpenExternalURL` / `ClipboardText` / `Quit` / `FocusWindow` / `Print` 等、OS 機能に限定）。小文字始まりは非公開（`emit` / `openFileFromIPC` 等）。`LICENSE.md` / `README.md` を `//go:embed`。
 - `config.go` — `config.json`（`os.UserConfigDir()/Markmiru/`）への設定・セッション永続化。標準ライブラリのみ。ウィンドウ状態は `saveWindowState`、セッション/スタイル/サイドバーは `beforeClose` の `persistSession`（`web.State` から生成・main で注入）が保存する。
 - `platform_*.go`（`_windows` / `_darwin` / `_linux` / `_other`）— OS 依存処理（ウィンドウ前面化・WebView フォーカス・印刷 `platformPrint`・ネイティブメニュー項目の有効/無効の直接更新 `platformSetMenuItemsEnabled` 等）をビルドタグで切替。darwin は cgo（Objective-C）で自前のネイティブ印刷（縦向きデフォルト）を実装し、他 OS は未処理を返して Wails `WindowPrint` にフォールバックする。linux は cgo（GTK3）で表示中のメニュー項目の有効/無効を直接更新する（Wails の Linux 実装がメニュー更新を捨てるため。docs §10）。`isMacOS` 等でメニューを分岐。
 - `single_instance.go` — Unix ソケット（`os.UserCacheDir()/Markmiru/`）による多重起動防止＋IPC。2 つ目の起動は既存へパスを渡して終了、既存ウィンドウを前面化。既存アプリでは `ipc:open-file` イベント→glue→`POST /tabs/open-path` でそのファイルを開く。
@@ -57,7 +59,7 @@ Markdown ドキュメントの**閲覧・編集**を行うデスクトップア�
 
 - **モードは閲覧（`view`）重視。** セッション復元時は終了時のモードに関わらず常に閲覧モードで開く（終了時のモードは保存しない）。編集モードは**透明 `<textarea>` に chroma ハイライト層を重ねるオーバーレイ**（CodeMirror ではない）。
 - **セキュリティ防御**：bluemonday でサニタイズ、**CSP をミドルウェア（`web.NewHandler`）で全レスポンスに注入**（`default-src 'none'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http: https:; font-src 'self' data:; connect-src 'self'; …`。`unsafe-eval` は mermaid/htmx の Function 用）。外部リンクはクリック時に確認ダイアログを挟み `OpenExternalURL`（`BrowserOpenURL`）で OS ブラウザへ委譲。外部画像はファイルごとに表示可否を確認。ローカル画像は `render` パッケージが data URI 化（相対・絶対・ルート相対パス対応）。
-- **メニュー処理の OS 分担**：macOS は `menu.EditMenu()` のネイティブ標準編集メニュー（ラベルは英語固定の既知制約）。Windows / Linux は日本語ラベルで手組みし、編集専用項目は閲覧モードで非活性化する。「ファイル → 保存」は dirty または無題のときだけ有効（全 OS）。**有効/無効はサーバ主導**：`web` のミドルウェア（`withMenuSync`）が各 POST の処理後（＋起動時のシェル描画 GET /）に状態から一括判定し、変化時だけ `Host.SetEditMenuEnabled` / `SetSaveMenuEnabled` / `SetModeMenuEnabled` を呼ぶ（フロント通知ではない）。
+- **メニュー処理の OS 分担**：macOS は `menu.EditMenu()` のネイティブ標準編集メニュー（ラベルは英語固定の既知制約）。Windows / Linux は日本語ラベルで手組みし、編集専用項目は閲覧モードで非活性化する。「ファイル → 保存」は dirty または無題のときだけ、「ファイル → 再読み込み」はファイルを持つ通常タブのときだけ有効（全 OS）。**有効/無効はサーバ主導**：`web` のミドルウェア（`withMenuSync`）が各 POST の処理後（＋起動時のシェル描画 GET /）に状態から一括判定し、変化時だけ `Host.SetEditMenuEnabled` / `SetSaveMenuEnabled` / `SetModeMenuEnabled` / `SetReloadMenuEnabled` を呼ぶ（フロント通知ではない）。
 
 ## 要件と優先度
 

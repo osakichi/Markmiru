@@ -22,8 +22,9 @@ type Tab struct {
 	Edited            bool   // 一度でも編集されたか（内容が元に戻っても未保存として扱う）
 	Mode              string // "view" | "source"
 	ReadOnly          bool
-	RemoteImagePolicy string // "" 未確認 / "allow" / "block"
-	quitResolved      bool   // 終了ループで確認済み（破棄選択）。終了を妨げない印。永続化しない
+	RemoteImagePolicy string     // "" 未確認 / "allow" / "block"
+	Format            textFormat // 元ファイルの BOM・改行コード（保存時に戻す。新規はゼロ値＝BOM なし・LF）
+	quitResolved      bool       // 終了ループで確認済み（破棄選択）。終了を妨げない印。永続化しない
 }
 
 func (t *Tab) dir() string {
@@ -574,11 +575,13 @@ func (s *State) AddImportedStyle(imp style.Style) {
 	s.activeStyleID = imp.ID
 }
 
-// AddTab はタブを追加して返す。最初のタブは自動的にアクティブになる。
-func (s *State) AddTab(filePath, fileName, content string) *Tab {
+// AddTab はファイルから読んだ内容（raw）でタブを追加して返す。最初のタブは自動的にアクティブになる。
+// 本文は BOM を除き改行を LF にそろえ、BOM・改行コードは Format に記録して保存時に戻す（textformat.go）。
+func (s *State) AddTab(filePath, fileName, raw string) *Tab {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.counter++
+	content, format := decodeText(raw)
 	t := &Tab{
 		ID:           fmt.Sprintf("t%d", s.counter),
 		FilePath:     filePath,
@@ -586,6 +589,7 @@ func (s *State) AddTab(filePath, fileName, content string) *Tab {
 		Content:      content,
 		SavedContent: content,
 		Mode:         "view",
+		Format:       format,
 	}
 	s.tabs = append(s.tabs, t)
 	if s.activeID == "" {
@@ -666,6 +670,49 @@ func (s *State) MarkSaved(id, path, saved string) bool {
 		t.Edited = false // 書き込んだ内容から変化していなければ clean に戻す
 	}
 	return true
+}
+
+// ReloadInfo は再読み込み（§5.4）に必要なタブ情報を返す。ファイルを持たない無題・読み取り専用
+// （About/ライセンス）・不在のタブは ok=false（再読み込みできない）。dirty は未保存の変更があるか
+// （再読み込みで破棄される変更の有無＝確認ダイアログを出すか）。
+func (s *State) ReloadInfo(id string) (path, fileName string, dirty, ok bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t := s.find(id)
+	if t == nil || t.ReadOnly || t.FilePath == "" {
+		return "", "", false, false
+	}
+	return t.FilePath, t.FileName, t.dirty(), true
+}
+
+// Reload はファイルから読み直した内容（raw）でタブの本文を置き換え、保存済み（clean）にする。
+// 未保存の変更は破棄される（呼び出し側が確認済みであること）。モード（閲覧/編集）と
+// 外部画像の表示ポリシーは維持する（同じファイルを読み直すだけのため）。BOM・改行コードは
+// 読み直したファイルのものに更新する（外部のエディタで書式ごと変えられた場合に合わせる）。
+func (s *State) Reload(id, raw string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t := s.find(id)
+	if t == nil || t.ReadOnly || t.FilePath == "" {
+		return false
+	}
+	content, format := decodeText(raw)
+	t.Content = content
+	t.SavedContent = content
+	t.Format = format
+	t.Edited = false
+	return true
+}
+
+// EncodeForSave は本文をタブの元ファイルの書式（BOM・改行コード）に戻した保存用の内容を返す。
+// 新規作成（無題）のタブは BOM なし・LF。タブが無ければ本文をそのまま返す。
+func (s *State) EncodeForSave(id, content string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if t := s.find(id); t != nil {
+		return t.Format.encode(content)
+	}
+	return content
 }
 
 func (s *State) find(id string) *Tab {
@@ -768,16 +815,23 @@ func (s *State) UpdateContent(id, content string) bool {
 //   - canSave: アクティブタブが dirty、または保存先未定の無題（「保存」メニュー用。
 //     無題は初回保存＝保存ダイアログに繋がるため、未編集でも保存可能とする）
 //   - canToggle: 閲覧/編集を切り替えられるか（「表示 → 閲覧/編集切替」メニュー用）
+//   - canReload: ファイルから読み直せるか（「ファイル → 再読み込み」メニュー用。無題は不可）
 //
 // 読み取り専用タブ（About/ライセンス。FilePath は空）とタブ無しはすべて無効。
-func (s *State) MenuStates() (canEdit, canSave, canToggle bool) {
+func (s *State) MenuStates() (canEdit, canSave, canToggle, canReload bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	t := s.find(s.activeID)
 	if t == nil || t.ReadOnly {
-		return false, false, false
+		return false, false, false, false
 	}
-	return t.Mode == "source", t.dirty() || t.FilePath == "", true
+	return t.Mode == "source", t.dirty() || t.FilePath == "", true, t.FilePath != ""
+}
+
+// CanReloadActive はアクティブタブを再読み込みできるか（右クリックメニューの活性判定用）。
+func (s *State) CanReloadActive() bool {
+	_, _, _, canReload := s.MenuStates()
+	return canReload
 }
 
 // ActiveMeta はアクティブタブのモードと読み取り専用フラグを返す。

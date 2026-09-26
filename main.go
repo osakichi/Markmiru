@@ -37,6 +37,10 @@ var saveMenuItem *menu.MenuItem
 // 無題＝切替可。web.Server の変化検出の基準値と一致させてある）。
 var modeMenuItem *menu.MenuItem
 
+// reloadMenuItem はメニュー「ファイル → 再読み込み」。ファイルを持つ通常タブがアクティブのときだけ
+// 有効にするため SetReloadMenuEnabled から参照できるよう保持する（無題・読み取り専用は無効）。
+var reloadMenuItem *menu.MenuItem
+
 // buildMenu はネイティブメニューを構築する。
 // クリック/ショートカットは runtime イベント（menu:*）を発火し、glue.js が htmx で対応する
 // Go-SSR エンドポイントを叩く。設計: docs/アーキテクチャ・画面設計.md §9
@@ -52,6 +56,13 @@ func buildMenu(app *App) *menu.Menu {
 	fileMenu := appMenu.AddSubmenu("ファイル")
 	fileMenu.AddText("新規", keys.CmdOrCtrl("n"), func(_ *menu.CallbackData) { app.emit("menu:new") })
 	fileMenu.AddText("開く", keys.CmdOrCtrl("o"), func(_ *menu.CallbackData) { app.emit("menu:open") })
+	// 再読み込み（§5.4。外部で更新されたファイルの取り込み）。Ctrl+R / Cmd+R は各 OS の「やり直し」
+	// （Markmiru は Ctrl+Shift+Z。macOS はネイティブの Cmd+Shift+Z、WebView2 は Ctrl+Y も）と
+	// 重ならず、Windows の WebView2 のブラウザ用ショートカット（Ctrl+R＝ページ再読込）は Wails が
+	// 無効化しているため、ここで確実に受け取れる。起動直後は無効から始め、サーバが
+	// SetReloadMenuEnabled で切り替える（web.Server の変化検出の基準値＝ゼロ値と一致）。
+	reloadMenuItem = fileMenu.AddText("再読み込み", keys.CmdOrCtrl("r"), func(_ *menu.CallbackData) { app.emit("menu:reload") })
+	reloadMenuItem.Disabled = true
 	saveMenuItem = fileMenu.AddText("保存", keys.CmdOrCtrl("s"), func(_ *menu.CallbackData) { app.emit("menu:save") })
 	// 起動直後は無効から始める（セッション復元は常に閲覧・クリーンのため）。以後はサーバが
 	// 状態変化に応じて SetSaveMenuEnabled で切り替える（dirty または無題のとき有効）。
@@ -157,10 +168,11 @@ func (h webHost) LicenseMarkdown() string { return h.app.ReadLicense() }
 func (h webHost) ExportStyleDialog(name string) (string, error) { return h.app.ExportStyleDialog(name) }
 func (h webHost) ImportStyleDialog() (string, error)            { return h.app.ImportStyleDialog() }
 
-func (h webHost) SetEditMenuEnabled(canEdit bool)   { h.app.SetEditMenuEnabled(canEdit) }
-func (h webHost) SetSaveMenuEnabled(canSave bool)   { h.app.SetSaveMenuEnabled(canSave) }
-func (h webHost) SetModeMenuEnabled(canToggle bool) { h.app.SetModeMenuEnabled(canToggle) }
-func (h webHost) Quit()                             { h.app.Quit() }
+func (h webHost) SetEditMenuEnabled(canEdit bool)     { h.app.SetEditMenuEnabled(canEdit) }
+func (h webHost) SetSaveMenuEnabled(canSave bool)     { h.app.SetSaveMenuEnabled(canSave) }
+func (h webHost) SetModeMenuEnabled(canToggle bool)   { h.app.SetModeMenuEnabled(canToggle) }
+func (h webHost) SetReloadMenuEnabled(canReload bool) { h.app.SetReloadMenuEnabled(canReload) }
+func (h webHost) Quit()                               { h.app.Quit() }
 
 func (h webHost) OpenURL(url string) { h.app.OpenExternalURL(url) }
 

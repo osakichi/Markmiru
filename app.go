@@ -135,6 +135,16 @@ func (a *App) SetModeMenuEnabled(canToggle bool) {
 	a.setMenuItemsEnabled([]*menu.MenuItem{modeMenuItem}, canToggle)
 }
 
+// SetReloadMenuEnabled はメニュー「ファイル → 再読み込み」の有効・無効を切り替える。
+// ファイルを持つ通常タブがアクティブのときだけ有効にする（無題・読み取り専用・タブ無しは無効。
+// サーバ側でも対象外は no-op）。サーバ（web の syncMenus）が変化時に呼ぶ。
+func (a *App) SetReloadMenuEnabled(canReload bool) {
+	if reloadMenuItem == nil {
+		return
+	}
+	a.setMenuItemsEnabled([]*menu.MenuItem{reloadMenuItem}, canReload)
+}
+
 // OpenExternalURL は URL を OS の既定ブラウザ／メーラで開く（プレビュー内の外部リンク用）。
 // WebView 自体を外部 URL へ遷移させないための委譲先。呼び出し側でスキームを検証済みとする。
 func (a *App) OpenExternalURL(url string) {

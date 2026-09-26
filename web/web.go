@@ -126,12 +126,13 @@ type renderReq struct {
 
 // dialogVM は #dialog-host に出す確認ダイアログ用データ。
 // Kind でテンプレートを切り替える: "remote"=外部画像確認 / "close-unsaved"=未保存クローズ確認 /
-// "missing-file"=起動時の不在ファイル確認（再試行/スキップ）。
+// "missing-file"=起動時の不在ファイル確認（再試行/スキップ）/ "link"=外部リンク確認 /
+// "reload-unsaved"=未保存の変更がある状態での再読み込み確認 / "reload-failed"=再読み込み失敗の通知。
 type dialogVM struct {
 	Kind     string
 	TabID    string
 	FileName string
-	Path     string // missing-file: 不在ファイルのフルパス（表示用）
+	Path     string // missing-file / reload-failed: 対象ファイルのフルパス（表示用）
 	URL      string // link: 開く予定の外部 URL（表示用）
 	Quit     bool   // close-unsaved: 終了ループ中か
 }
@@ -176,6 +177,10 @@ type Host interface {
 	// 防御として残しつつ、入口のメニューを塞いで操作不能を明示する）。
 	// サーバ主導: 各 POST の処理後に syncMenus が状態から判定し、変化時だけ呼ぶ。
 	SetModeMenuEnabled(canToggle bool)
+	// SetReloadMenuEnabled はメニュー「ファイル → 再読み込み」の有効・無効を切り替える。
+	// ファイルを持つ通常タブがアクティブのとき canReload=true（無題・読み取り専用・タブ無しは無効）。
+	// サーバ主導: 各 POST の処理後に syncMenus が状態から判定し、変化時だけ呼ぶ。
+	SetReloadMenuEnabled(canReload bool)
 	// Quit はアプリを終了する（終了ループで未保存タブをすべて処理し終えた後に呼ぶ）。
 	Quit()
 	// ReadFile は指定パスを読み込み、ファイル名と内容を返す（不在ファイルの「再試行」用）。
@@ -196,10 +201,10 @@ type Server struct {
 	// menuLast は Host へ最後に通知したメニュー有効状態（syncMenus の変化検出用）。
 	// 状態の取得から通知までを menuMu 内で行い、並行リクエストで通知順が記録と逆転して
 	// メニューが実状態と食い違ったまま固着するのを防ぐ。初期値は buildMenu の初期状態と
-	// 一致させてあり（編集専用項目・保存＝無効、閲覧/編集切替＝有効。canToggle は
+	// 一致させてあり（編集専用項目・保存・再読み込み＝無効、閲覧/編集切替＝有効。canToggle は
 	// NewHandler で true に初期化）、起動直後の無駄なメニュー再構築を避ける。
 	menuMu   sync.Mutex
-	menuLast struct{ canEdit, canSave, canToggle bool }
+	menuLast struct{ canEdit, canSave, canToggle, canReload bool }
 }
 
 // NewHandler は Go-SSR の http.Handler を返す。
@@ -231,6 +236,9 @@ func NewHandler(state *State, host Host) http.Handler {
 	mux.HandleFunc("POST /active/save-as", s.serveActiveSaveAs)
 	mux.HandleFunc("POST /active/mode", s.serveActiveMode)
 	mux.HandleFunc("POST /active/print", s.serveActivePrint)
+	mux.HandleFunc("POST /active/reload", s.serveActiveReload)
+	mux.HandleFunc("POST /tabs/{id}/reload", s.serveReload)
+	mux.HandleFunc("POST /dialog/close", s.serveDialogClose)
 	mux.HandleFunc("POST /tabs/{id}/mode", s.serveMode)
 	mux.HandleFunc("POST /tabs/{id}/content", s.serveContent)
 	mux.HandleFunc("POST /tabs/{id}/remote-images", s.serveRemoteImages)
@@ -283,7 +291,7 @@ func (s *Server) syncMenus() {
 	}
 	s.menuMu.Lock()
 	defer s.menuMu.Unlock()
-	canEdit, canSave, canToggle := s.state.MenuStates()
+	canEdit, canSave, canToggle, canReload := s.state.MenuStates()
 	if canEdit != s.menuLast.canEdit {
 		s.menuLast.canEdit = canEdit
 		s.host.SetEditMenuEnabled(canEdit)
@@ -295,6 +303,10 @@ func (s *Server) syncMenus() {
 	if canToggle != s.menuLast.canToggle {
 		s.menuLast.canToggle = canToggle
 		s.host.SetModeMenuEnabled(canToggle)
+	}
+	if canReload != s.menuLast.canReload {
+		s.menuLast.canReload = canReload
+		s.host.SetReloadMenuEnabled(canReload)
 	}
 }
 
@@ -543,7 +555,9 @@ func (s *Server) writeTab(id, path, content string) bool {
 	if s.host == nil {
 		return false
 	}
-	if err := s.host.WriteFile(path, content); err != nil {
+	// 書き込むのは元ファイルの BOM・改行コードに戻した内容。保存済み印（MarkSaved）の基準は
+	// 本文（正規化済み）のスナップショットのまま（dirty 判定は正規化した本文どうしで行うため）。
+	if err := s.host.WriteFile(path, s.state.EncodeForSave(id, content)); err != nil {
 		return false
 	}
 	s.state.MarkSaved(id, path, content)
@@ -709,6 +723,7 @@ type ctxMenuVM struct {
 	CanUndo      bool   // 取り消せる編集が残っているか（取り消し履歴の残量。クライアント判定）
 	CanRedo      bool   // やり直せる編集が残っているか（同上）
 	LinkURL      string // 右クリック位置のリンク URL（外部スキームのみ。空ならリンク項目は非活性）
+	CanReload    bool   // アクティブタブを再読み込みできるか（無題・読み取り専用は非活性）
 }
 
 // serveCtxMenuOpen は右クリックメニューの断片を返す（#ctxmenu-host に注入。位置決め・
@@ -730,6 +745,7 @@ func (s *Server) serveCtxMenuOpen(w http.ResponseWriter, r *http.Request) {
 		CanUndo:      r.FormValue("undo") == "1",
 		CanRedo:      r.FormValue("redo") == "1",
 		LinkURL:      link,
+		CanReload:    s.state.CanReloadActive(),
 	}
 	htmlHeader(w)
 	_ = shellTmpl.ExecuteTemplate(w, "ctxmenu", vm)
@@ -775,9 +791,17 @@ func (s *Server) serveNav(w http.ResponseWriter) {
 // 位置や編集キャレットを保つために使う。Dialog は nil なので表示中のダイアログは閉じる
 // （保存で前提が消えた確認ダイアログを残さない）。
 func (s *Server) serveNavKeep(w http.ResponseWriter) {
+	s.serveNavKeepWithDialog(w, nil)
+}
+
+// serveNavKeepWithDialog は serveNavKeep と同じく本文を差し替えず、#dialog-host に dlg を出す
+// （nil なら閉じる）。本文や編集中のキャレットを保ったまま通知を出したい場合に使う。
+func (s *Server) serveNavKeepWithDialog(w http.ResponseWriter, dlg *dialogVM) {
+	vm := s.shellOOBVM()
+	vm.Dialog = dlg
 	w.Header().Set("HX-Reswap", "none")
 	htmlHeader(w)
-	_ = shellTmpl.ExecuteTemplate(w, "navkeep", s.shellOOBVM())
+	_ = shellTmpl.ExecuteTemplate(w, "navkeep", vm)
 }
 
 // serveOpen は OS のファイル選択を開き、選択ファイルをタブで開く（最後をアクティブ）。
@@ -851,6 +875,62 @@ func (s *Server) serveActivePrint(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("HX-Trigger-After-Settle", "do-print")
 	htmlHeader(w)
 	_ = shellTmpl.ExecuteTemplate(w, "nav", vm)
+}
+
+// serveActiveReload はアクティブタブを再読み込みする（ネイティブメニュー／ショートカット／
+// 右クリックメニューからの glue ブリッジ用。§5.4）。
+func (s *Server) serveActiveReload(w http.ResponseWriter, r *http.Request) {
+	s.reload(w, r, s.state.ActiveID())
+}
+
+// serveReload は指定タブを再読み込みする（確認ダイアログの選択結果もここへ来る）。
+func (s *Server) serveReload(w http.ResponseWriter, r *http.Request) {
+	s.reload(w, r, r.PathValue("id"))
+}
+
+// reload はタブのファイルを読み直して本文を置き換える（外部で更新されたファイルの取り込み用。§5.4）。
+// 外部変更の検知は行わず、この明示操作でだけ読み直す。
+//   - choice 未指定: 未保存の変更があれば確認ダイアログ（破棄して再読み込み／キャンセル）を出す。
+//     変更が無ければそのまま読み直す。
+//   - choice=discard: 未保存の変更を破棄して読み直す。
+//   - choice=cancel: 何もしない（未保存の変更を保ったまま。本文は触れずダイアログだけ閉じる）。
+//
+// 読み直せない（削除・移動等）ときはエラーダイアログを出し、本文と未保存の変更はそのまま残す。
+// 無題・読み取り専用のタブは対象外で何もしない（メニュー側も無効化済み）。
+func (s *Server) reload(w http.ResponseWriter, r *http.Request, id string) {
+	path, fileName, dirty, ok := s.state.ReloadInfo(id)
+	if !ok {
+		s.serveNavKeep(w)
+		return
+	}
+	switch r.URL.Query().Get("choice") {
+	case "":
+		if dirty {
+			s.serveCloseDialog(w, &dialogVM{Kind: "reload-unsaved", TabID: id, FileName: fileName})
+			return
+		}
+	case "discard":
+	default: // cancel
+		s.serveNavKeep(w)
+		return
+	}
+	var content string
+	var read bool
+	if s.host != nil {
+		_, content, read = s.host.ReadFile(path)
+	}
+	if !read {
+		// 本文は触れず（未保存の変更も保持）、エラーだけ #dialog-host に出す。
+		s.serveNavKeepWithDialog(w, &dialogVM{Kind: "reload-failed", TabID: id, FileName: fileName, Path: path})
+		return
+	}
+	s.state.Reload(id, content)
+	s.serveNav(w)
+}
+
+// serveDialogClose は情報表示だけのダイアログ（再読み込み失敗の通知等）を閉じる。本文は触れない。
+func (s *Server) serveDialogClose(w http.ResponseWriter, _ *http.Request) {
+	s.serveNavKeep(w)
 }
 
 func (s *Server) save(w http.ResponseWriter, r *http.Request, id string, forceDialog bool) {

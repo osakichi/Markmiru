@@ -166,7 +166,8 @@
      選択が無ければ切り取り/コピーが、リンク上でなければリンク 2 項目が非活性。編集操作は
      data-ctx-cmd（glue の editExec＝ネイティブメニューと同じ実装）、リンク操作は
      data-ctx-link-open（既存の /link/confirm フローへ）/
-     data-ctx-link-copy（glue がコピー）。 */}}
+     data-ctx-link-copy（glue がコピー）、再読み込みは data-ctx-reload（glue がネイティブメニューと
+     同じ reloadActive へ。無題・読み取り専用のタブでは非活性）。 */}}
 {{define "ctxmenu"}}<div class="ctxmenu" role="menu">
 <button type="button" class="ctxmenu-item" role="menuitem" data-ctx-cmd="undo"{{if not (and .Edit .CanUndo)}} disabled{{end}}>元に戻す</button>
 <button type="button" class="ctxmenu-item" role="menuitem" data-ctx-cmd="redo"{{if not (and .Edit .CanRedo)}} disabled{{end}}>やり直し</button>
@@ -179,6 +180,8 @@
 <hr class="ctxmenu-sep">
 <button type="button" class="ctxmenu-item" role="menuitem" data-ctx-link-open="{{.LinkURL}}"{{if not .LinkURL}} disabled{{end}}>リンクを開く...</button>
 <button type="button" class="ctxmenu-item" role="menuitem" data-ctx-link-copy="{{.LinkURL}}"{{if not .LinkURL}} disabled{{end}}>リンクの URL をコピー</button>
+<hr class="ctxmenu-sep">
+<button type="button" class="ctxmenu-item" role="menuitem" data-ctx-reload{{if not .CanReload}} disabled{{end}}>再読み込み</button>
 </div>{{end}}
 
 {{/* 外部画像の確認ダイアログ（.TabID / .FileName）。許可で再描画、拒否で遮断のまま。 */}}
@@ -227,8 +230,28 @@
   </div>
 </div></div>{{end}}
 
+{{/* 未保存の変更がある状態での再読み込み確認（.TabID / .FileName）。
+     破棄（データ損失）は data-dialog-accept で 500ms 遅延有効・Enter では発火しない。
+     安全側「キャンセル」を Enter/Esc の既定に（未保存の変更を保ったまま閉じる）。 */}}
+{{define "dialog-reload-unsaved"}}<div class="mm-backdrop"><div class="mm-dialog" role="dialog" aria-modal="true">
+  <p class="mm-dialog-msg">「{{.FileName}}」には未保存の変更があります。変更を破棄してファイルを再読み込みしますか？</p>
+  <div class="mm-dialog-actions">
+    <button type="button" class="mm-btn" data-dialog-reject data-dialog-default hx-post="/tabs/{{.TabID}}/reload?choice=cancel" hx-target="#content">キャンセル</button>
+    <button type="button" class="mm-btn mm-btn-danger" data-dialog-accept disabled hx-post="/tabs/{{.TabID}}/reload?choice=discard" hx-target="#content">破棄して再読み込み</button>
+  </div>
+</div></div>{{end}}
+
+{{/* 再読み込みの失敗通知（.Path）。本文・未保存の変更は保持済み。OK のみ（Enter/Esc で閉じる）。 */}}
+{{define "dialog-reload-failed"}}<div class="mm-backdrop"><div class="mm-dialog" role="dialog" aria-modal="true">
+  <p class="mm-dialog-msg">ファイルを読み込めませんでした。削除・移動されていないか確認してください:</p>
+  <p class="mm-dialog-path">{{.Path}}</p>
+  <div class="mm-dialog-actions">
+    <button type="button" class="mm-btn mm-btn-primary" data-dialog-reject data-dialog-default hx-post="/dialog/close" hx-target="#content">OK</button>
+  </div>
+</div></div>{{end}}
+
 {{/* ダイアログの種類ディスパッチ（Kind でテンプレートを選ぶ）。 */}}
-{{define "dialog"}}{{if eq .Kind "close-unsaved"}}{{template "dialog-close-unsaved" .}}{{else if eq .Kind "missing-file"}}{{template "dialog-missing-file" .}}{{else if eq .Kind "link"}}{{template "dialog-link" .}}{{else}}{{template "dialog-remote" .}}{{end}}{{end}}
+{{define "dialog"}}{{if eq .Kind "close-unsaved"}}{{template "dialog-close-unsaved" .}}{{else if eq .Kind "missing-file"}}{{template "dialog-missing-file" .}}{{else if eq .Kind "link"}}{{template "dialog-link" .}}{{else if eq .Kind "reload-unsaved"}}{{template "dialog-reload-unsaved" .}}{{else if eq .Kind "reload-failed"}}{{template "dialog-reload-failed" .}}{{else}}{{template "dialog-remote" .}}{{end}}{{end}}
 
 {{/* #dialog-host を OOB で差し替え（ダイアログ表示 or クリア）。VM は .Dialog を持つ。 */}}
 {{define "dialog-host-oob"}}<div id="dialog-host" hx-swap-oob="true">{{if .Dialog}}{{template "dialog" .Dialog}}{{end}}</div>{{end}}

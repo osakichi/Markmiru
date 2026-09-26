@@ -269,10 +269,11 @@
   function ajax(method, path, target, swap) {
     if (window.htmx) window.htmx.ajax(method, path, { target: target, swap: swap || 'innerHTML' })
   }
-  // 保存の前処理: 編集中の textarea には未送信の内容（150ms デバウンス待ち）が残り得る。
-  // そのまま保存するとサーバは古い内容を書き込む（クリーン認識なら no-op にすらなる）ため、
-  // 保存系は必ず現在の内容を先にサーバへ同期（flush）してから保存エンドポイントを叩く。
-  function saveActive(path) {
+  // 保存・再読み込みの前処理: 編集中の textarea には未送信の内容（150ms デバウンス待ち）が残り得る。
+  // そのまま保存するとサーバは古い内容を書き込み（クリーン認識なら no-op にすらなる）、再読み込みでは
+  // 未保存の変更に気付かず確認なしで破棄してしまうため、必ず現在の内容を先にサーバへ同期（flush）して
+  // から対象のエンドポイントを叩く。
+  function flushThen(path) {
     var ta = document.querySelector('.editor-input')
     if (ta && window.htmx) {
       window.htmx
@@ -281,6 +282,13 @@
       return
     }
     ajax('POST', path, '#content')
+  }
+  function saveActive(path) {
+    flushThen(path)
+  }
+  // 再読み込み（§5.4）。未保存の変更があればサーバが確認ダイアログを返す。
+  function reloadActive() {
+    flushThen('/active/reload')
   }
   // 閲覧モードで本文（.markdown-body）だけを選択する（ウィンドウ全体の選択を防ぐ）。成否を返す。
   function selectPreviewAll() {
@@ -357,6 +365,7 @@
   if (R && R.EventsOn) {
     R.EventsOn('menu:new', function () { ajax('POST', '/tabs/new', '#content') })
     R.EventsOn('menu:open', function () { ajax('POST', '/tabs/open', '#content') })
+    R.EventsOn('menu:reload', function () { reloadActive() })
     R.EventsOn('menu:save', function () { saveActive('/active/save') })
     R.EventsOn('menu:saveAs', function () { saveActive('/active/save-as') })
     R.EventsOn('menu:print', function () { ajax('POST', '/active/print', '#content') })
@@ -817,9 +826,12 @@
     var cmd = btn.getAttribute('data-ctx-cmd')
     var openURL = btn.getAttribute('data-ctx-link-open')
     var copyURL = btn.getAttribute('data-ctx-link-copy')
+    var reload = btn.hasAttribute('data-ctx-reload')
     closeCtxMenu()
     if (cmd) {
       editExec(cmd)
+    } else if (reload) {
+      reloadActive()
     } else if (openURL && window.htmx) {
       window.htmx.ajax('POST', '/link/confirm', {
         target: '#dialog-host',

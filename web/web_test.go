@@ -25,21 +25,22 @@ func do(h http.Handler, method, path string) *httptest.ResponseRecorder {
 
 // fakeHost は OS ダイアログ・書込のテスト用ダミー。
 type fakeHost struct {
-	openFiles       []OpenedFile
-	savePath        string
-	written         map[string]string
-	readme          string
-	license         string
-	exportPath      string
-	importContent   string
-	editMenuEnabled bool              // SetEditMenuEnabled の最後の値
-	saveMenuEnabled bool              // SetSaveMenuEnabled の最後の値
-	modeMenuEnabled bool              // SetModeMenuEnabled の最後の値
-	quitCalled      bool              // Quit が呼ばれたか
-	readFiles       map[string]string // ReadFile が返す内容（path→content）。無ければ ok=false
-	openedURL       string            // OpenURL に渡された最後の URL
-	clipboard       string            // ClipboardText が返すテキスト
-	clipboardErr    error             // ClipboardText が返すエラー
+	openFiles         []OpenedFile
+	savePath          string
+	written           map[string]string
+	readme            string
+	license           string
+	exportPath        string
+	importContent     string
+	editMenuEnabled   bool              // SetEditMenuEnabled の最後の値
+	saveMenuEnabled   bool              // SetSaveMenuEnabled の最後の値
+	modeMenuEnabled   bool              // SetModeMenuEnabled の最後の値
+	reloadMenuEnabled bool              // SetReloadMenuEnabled の最後の値
+	quitCalled        bool              // Quit が呼ばれたか
+	readFiles         map[string]string // ReadFile が返す内容（path→content）。無ければ ok=false
+	openedURL         string            // OpenURL に渡された最後の URL
+	clipboard         string            // ClipboardText が返すテキスト
+	clipboardErr      error             // ClipboardText が返すエラー
 }
 
 func (h *fakeHost) OpenFilesDialog() ([]OpenedFile, error) { return h.openFiles, nil }
@@ -58,6 +59,7 @@ func (h *fakeHost) ImportStyleDialog() (string, error)       { return h.importCo
 func (h *fakeHost) SetEditMenuEnabled(canEdit bool)          { h.editMenuEnabled = canEdit }
 func (h *fakeHost) SetSaveMenuEnabled(canSave bool)          { h.saveMenuEnabled = canSave }
 func (h *fakeHost) SetModeMenuEnabled(canToggle bool)        { h.modeMenuEnabled = canToggle }
+func (h *fakeHost) SetReloadMenuEnabled(canReload bool)      { h.reloadMenuEnabled = canReload }
 func (h *fakeHost) Quit()                                    { h.quitCalled = true }
 func (h *fakeHost) ReadFile(path string) (string, string, bool) {
 	content, ok := h.readFiles[path]
@@ -1658,5 +1660,222 @@ func TestClipboardReadError(t *testing.T) {
 	}
 	if strings.Contains(rec.Body.String(), "secret") {
 		t.Errorf("clipboard text must not be returned on error: %q", rec.Body.String())
+	}
+}
+
+// --- 再読み込み（§5.4） ---
+
+// 未変更のタブは確認なしでファイルの新しい内容に置き換わり、clean のまま。モードは維持する。
+func TestReloadCleanTabReplacesContent(t *testing.T) {
+	st := NewState()
+	tab := st.AddTab("/d/a.md", "a.md", "# old")
+	st.SetMode(tab.ID) // 編集モード
+	host := &fakeHost{readFiles: map[string]string{"/d/a.md": "# new"}}
+	rec := do(NewHandler(st, host), "POST", "/active/reload")
+	if rec.Header().Get("HX-Retarget") != "" {
+		t.Errorf("clean tab must reload without a dialog")
+	}
+	req, _ := st.RenderReq(tab.ID)
+	if req.Content != "# new" {
+		t.Errorf("content should be reloaded, got %q", req.Content)
+	}
+	if st.IsDirty(tab.ID) {
+		t.Errorf("reloaded tab should be clean")
+	}
+	if req.Mode != "source" {
+		t.Errorf("mode should be kept (source), got %q", req.Mode)
+	}
+	if !strings.Contains(rec.Body.String(), "# new") {
+		t.Errorf("response should render the reloaded content: %s", rec.Body.String())
+	}
+}
+
+// 未保存の変更があるタブは確認ダイアログ（破棄して再読み込み／キャンセル）を出し、まだ読み直さない。
+func TestReloadDirtyTabShowsDialog(t *testing.T) {
+	st, id := dirtyTab("/d/a.md")
+	host := &fakeHost{readFiles: map[string]string{"/d/a.md": "# new"}}
+	rec := do(NewHandler(st, host), "POST", "/active/reload")
+	if rec.Header().Get("HX-Retarget") != "#dialog-host" {
+		t.Errorf("reload of dirty tab should retarget dialog-host, got %q", rec.Header().Get("HX-Retarget"))
+	}
+	body := rec.Body.String()
+	for _, want := range []string{"未保存の変更", "a.md", "/tabs/" + id + "/reload?choice=discard", "/tabs/" + id + "/reload?choice=cancel", "data-dialog-accept disabled", "破棄して再読み込み"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("reload dialog missing %q: %s", want, body)
+		}
+	}
+	if !st.IsDirty(id) {
+		t.Errorf("tab must stay dirty until the user confirms")
+	}
+}
+
+// 「破棄して再読み込み」は未保存の変更を捨てて読み直し、clean にする。
+func TestReloadDiscardReplacesContent(t *testing.T) {
+	st, id := dirtyTab("/d/a.md")
+	host := &fakeHost{readFiles: map[string]string{"/d/a.md": "# new"}}
+	do(NewHandler(st, host), "POST", "/tabs/"+id+"/reload?choice=discard")
+	req, _ := st.RenderReq(id)
+	if req.Content != "# new" || st.IsDirty(id) {
+		t.Errorf("discard should reload and clean the tab, content=%q dirty=%v", req.Content, st.IsDirty(id))
+	}
+}
+
+// 「キャンセル」は未保存の変更を保ったまま、本文には触れずダイアログだけ閉じる。
+func TestReloadCancelKeepsEdits(t *testing.T) {
+	st, id := dirtyTab("/d/a.md")
+	before, _ := st.RenderReq(id)
+	host := &fakeHost{readFiles: map[string]string{"/d/a.md": "# new"}}
+	rec := do(NewHandler(st, host), "POST", "/tabs/"+id+"/reload?choice=cancel")
+	assertNavKeep(t, rec)
+	after, _ := st.RenderReq(id)
+	if after.Content != before.Content || !st.IsDirty(id) {
+		t.Errorf("cancel must keep unsaved edits, content=%q dirty=%v", after.Content, st.IsDirty(id))
+	}
+}
+
+// 読み直せない（削除・移動）ときはエラーを出し、本文と未保存の変更はそのまま残す。
+func TestReloadMissingFileShowsError(t *testing.T) {
+	st, id := dirtyTab("/d/gone.md")
+	before, _ := st.RenderReq(id)
+	rec := do(NewHandler(st, &fakeHost{}), "POST", "/tabs/"+id+"/reload?choice=discard")
+	assertNavKeep(t, rec)
+	body := rec.Body.String()
+	if !strings.Contains(body, "読み込めませんでした") || !strings.Contains(body, "/d/gone.md") || !strings.Contains(body, `hx-post="/dialog/close"`) {
+		t.Errorf("reload failure dialog not shown: %s", body)
+	}
+	after, _ := st.RenderReq(id)
+	if after.Content != before.Content || !st.IsDirty(id) {
+		t.Errorf("failed reload must keep content and unsaved edits")
+	}
+	// OK で閉じる（本文は触れない）。
+	assertNavKeep(t, do(NewHandler(st, &fakeHost{}), "POST", "/dialog/close"))
+}
+
+// 無題・読み取り専用のタブは再読み込みの対象外（何もしない）。
+func TestReloadIgnoredForUntitledAndReadOnly(t *testing.T) {
+	st := NewState()
+	host := &fakeHost{readme: "# readme", readFiles: map[string]string{"": "x"}}
+	h := NewHandler(st, host)
+	do(h, "POST", "/tabs/new")
+	assertNavKeep(t, do(h, "POST", "/active/reload"))
+	do(h, "POST", "/doc/about")
+	assertNavKeep(t, do(h, "POST", "/active/reload"))
+	req := st.RenderReqActive()
+	if req.Content != "# readme" {
+		t.Errorf("read-only tab content must not change, got %q", req.Content)
+	}
+}
+
+// 「再読み込み」メニューはファイルを持つ通常タブで有効、無題・読み取り専用で無効。
+func TestReloadMenuEnabledOnlyForFileTabs(t *testing.T) {
+	st := NewState()
+	host := &fakeHost{readme: "# readme", readFiles: map[string]string{"/d/a.md": "A"}}
+	h := NewHandler(st, host)
+	do(h, "POST", "/tabs/open-path?path=/d/a.md")
+	if !host.reloadMenuEnabled {
+		t.Errorf("file tab should enable the reload menu")
+	}
+	do(h, "POST", "/tabs/new")
+	if host.reloadMenuEnabled {
+		t.Errorf("untitled tab should disable the reload menu")
+	}
+	do(h, "POST", "/doc/about")
+	if host.reloadMenuEnabled {
+		t.Errorf("read-only tab should disable the reload menu")
+	}
+}
+
+// 右クリックメニューの「再読み込み」は、ファイルを持つ通常タブでだけ活性。
+func TestCtxMenuReloadItem(t *testing.T) {
+	st := NewState()
+	st.AddTab("/d/a.md", "a.md", "A")
+	body := do(newH(st), "POST", "/ctxmenu/open").Body.String()
+	if !strings.Contains(body, "data-ctx-reload>再読み込み") {
+		t.Errorf("reload item should be enabled for a file tab: %s", body)
+	}
+	st.NewUntitled()
+	body = do(newH(st), "POST", "/ctxmenu/open").Body.String()
+	if !strings.Contains(body, "data-ctx-reload disabled>再読み込み") {
+		t.Errorf("reload item should be disabled for an untitled tab: %s", body)
+	}
+}
+
+// UTF-8 BOM 付きのファイル: 閲覧は見出しとして描画し、保存時は BOM を付け直す（textformat.go）。
+func TestBOMFileRendersAndKeepsBOMOnSave(t *testing.T) {
+	st := NewState()
+	tab := st.AddTab("/d/bom.md", "bom.md", bom+"# 見出し\n\n本文")
+	host := &fakeHost{}
+	h := NewHandler(st, host)
+	body := do(h, "GET", "/tabs/"+tab.ID+"/view").Body.String()
+	if !strings.Contains(body, `<h1 id="見出し">見出し</h1>`) {
+		t.Errorf("heading after BOM should render as h1: %s", body)
+	}
+	st.SetMode(tab.ID)
+	do(h, "POST", "/tabs/"+tab.ID+"/content?value="+url.QueryEscape("# 見出し\n\n本文!"))
+	do(h, "POST", "/tabs/"+tab.ID+"/save")
+	if got := host.written["/d/bom.md"]; got != bom+"# 見出し\n\n本文!" {
+		t.Errorf("saved content must keep the BOM, got %q", got)
+	}
+}
+
+// CRLF・BOM 付きのファイルを編集モードで開き、編集せずに入力欄の内容（textarea は LF にそろえる）を
+// 送り直しても未保存扱いにならない（再読み込みで確認が出ない）。
+func TestCRLFFileNotDirtyAfterTextareaFlush(t *testing.T) {
+	st := NewState()
+	tab := st.AddTab("/d/w.md", "w.md", bom+"# 見出し\r\n\r\n本文\r\n")
+	st.SetMode(tab.ID)
+	host := &fakeHost{readFiles: map[string]string{"/d/w.md": bom + "# 見出し\r\n\r\n本文\r\n"}}
+	h := NewHandler(st, host)
+	do(h, "POST", "/tabs/"+tab.ID+"/content?value="+url.QueryEscape("# 見出し\n\n本文\n"))
+	if st.IsDirty(tab.ID) {
+		t.Fatalf("flushing the unedited textarea value must not make the tab dirty")
+	}
+	if rec := do(h, "POST", "/active/reload"); rec.Header().Get("HX-Retarget") != "" {
+		t.Errorf("reload of an unedited CRLF file must not ask for confirmation")
+	}
+}
+
+// 編集して保存すると、元ファイルの BOM・改行コード（CRLF）で書き込む。
+func TestSaveKeepsOriginalBOMAndCRLF(t *testing.T) {
+	st := NewState()
+	tab := st.AddTab("/d/w.md", "w.md", bom+"A\r\nB\r\n")
+	st.SetMode(tab.ID)
+	host := &fakeHost{}
+	h := NewHandler(st, host)
+	do(h, "POST", "/tabs/"+tab.ID+"/content?value="+url.QueryEscape("A\nB!\n"))
+	do(h, "POST", "/tabs/"+tab.ID+"/save")
+	if got, want := host.written["/d/w.md"], bom+"A\r\nB!\r\n"; got != want {
+		t.Errorf("saved = %q, want %q", got, want)
+	}
+	if st.IsDirty(tab.ID) {
+		t.Errorf("tab should be clean after save")
+	}
+}
+
+// 新規作成（無題）のファイルは BOM なし・LF で保存する（貼り付けで紛れた BOM・CRLF も除く）。
+func TestSaveUntitledIsLFWithoutBOM(t *testing.T) {
+	st := NewState()
+	tab := st.NewUntitled()
+	host := &fakeHost{savePath: "/d/new.md"}
+	h := NewHandler(st, host)
+	do(h, "POST", "/tabs/"+tab.ID+"/content?value="+url.QueryEscape(bom+"A\r\nB"))
+	do(h, "POST", "/tabs/"+tab.ID+"/save")
+	if got := host.written["/d/new.md"]; got != "A\nB" {
+		t.Errorf("new file should be saved as LF without BOM, got %q", got)
+	}
+}
+
+// 再読み込みは、外部で変わった BOM・改行コードも取り込む（以後の保存はその書式）。
+func TestReloadAdoptsNewFormat(t *testing.T) {
+	st := NewState()
+	tab := st.AddTab("/d/w.md", "w.md", "A\nB\n") // LF・BOM なし
+	host := &fakeHost{readFiles: map[string]string{"/d/w.md": bom + "A\r\nB\r\nC\r\n"}}
+	h := NewHandler(st, host)
+	do(h, "POST", "/active/reload")
+	st.SetMode(tab.ID)
+	do(h, "POST", "/tabs/"+tab.ID+"/content?value="+url.QueryEscape("A\nB\nC!\n"))
+	do(h, "POST", "/tabs/"+tab.ID+"/save")
+	if got, want := host.written["/d/w.md"], bom+"A\r\nB\r\nC!\r\n"; got != want {
+		t.Errorf("saved = %q, want %q", got, want)
 	}
 }
