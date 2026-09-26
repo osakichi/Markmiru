@@ -191,19 +191,16 @@
   max-width: 100%;
 }
 
-/* リモート画像を遮断した場合のプレースホルダ（src を剥がし alt を表示） */
-.markdown-body img[data-remote-blocked] {
+/* 遮断した外部画像のプレースホルダ。render が <img> を文言＋代替テキストの <span> に置き換えて出力する
+   （img の ::after は WebKit で描画されないため、文言は CSS ではなく本文として持つ）。 */
+.markdown-body .remote-blocked {
   display: inline-block;
-  min-width: 2em;
-  min-height: 1.5em;
   padding: 0.5em 0.75em;
   border: 1px dashed var(--md-border, #d0d7de);
   border-radius: 6px;
   color: var(--md-muted, #8b949e);
   font-size: 0.85em;
-}
-.markdown-body img[data-remote-blocked]::after {
-  content: "🚫 外部画像（非表示） " attr(alt);
+  line-height: 1.4;
 }
 
 /* 明示的な改ページの目印（閲覧モードの画面のみ。印刷には出さない）。

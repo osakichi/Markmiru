@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -169,6 +170,58 @@ func HighlightCSS(scheme string) string {
 	var buf bytes.Buffer
 	_ = formatter.WriteCSS(&buf, style)
 	return buf.String()
+}
+
+// PrintHighlightCSS は印刷用（@media print）のコードハイライト CSS を返す。
+// 画面用テーマ（#markmiru-code-theme）に重ねて効かせるため、ライト（github）の CSS だけでは
+// 画面がダーク（github-dark）のときに付いた指定のうち、github が同じクラスに指定しないもの
+// （太字・斜体・下線、および文字色・背景色）が打ち消されず紙に残る（例: 関数名の太字、
+// github が色を持たない字句に github-dark の淡い文字色が残って白い紙でほぼ見えない）。
+// そこで github-dark だけが付ける指定を、そのクラスに限って既定へ戻すルールを末尾に足す
+// （github 自身の指定は残る。比較は chroma の CSS 出力と同じく背景エントリとの差分で行う）。
+func PrintHighlightCSS() string {
+	lightStyle, darkStyle := styles.Get("github"), styles.Get("github-dark")
+	lightBg, darkBg := lightStyle.Get(chroma.Background), darkStyle.Get(chroma.Background)
+	var b strings.Builder
+	b.WriteString(HighlightCSS("light"))
+	// コード全体の文字色（.bg / .chroma）。github-dark は淡色を指定し github は指定しないため、
+	// 戻さないと色を持たない字句（Name 等）が淡色を継承して紙で読めなくなる。
+	if darkBg.Colour.IsSet() && !lightBg.Colour.IsSet() {
+		b.WriteString(".bg, .chroma { color:inherit }\n")
+	}
+	var tts []int
+	for tt := range chroma.StandardTypes {
+		tts = append(tts, int(tt))
+	}
+	sort.Ints(tts)
+	for _, ti := range tts {
+		tt := chroma.TokenType(ti)
+		cls := chroma.StandardTypes[tt]
+		if cls == "" || tt == chroma.Background || tt == chroma.PreWrapper {
+			continue
+		}
+		d, l := darkStyle.Get(tt).Sub(darkBg), lightStyle.Get(tt).Sub(lightBg)
+		var decls []string
+		if d.Colour.IsSet() && !l.Colour.IsSet() {
+			decls = append(decls, "color:inherit")
+		}
+		if d.Background.IsSet() && !l.Background.IsSet() {
+			decls = append(decls, "background-color:transparent")
+		}
+		if d.Bold == chroma.Yes && l.Bold != chroma.Yes {
+			decls = append(decls, "font-weight:normal")
+		}
+		if d.Italic == chroma.Yes && l.Italic != chroma.Yes {
+			decls = append(decls, "font-style:normal")
+		}
+		if d.Underline == chroma.Yes && l.Underline != chroma.Yes {
+			decls = append(decls, "text-decoration:none")
+		}
+		if len(decls) > 0 {
+			fmt.Fprintf(&b, ".chroma .%s { %s }\n", cls, strings.Join(decls, ";"))
+		}
+	}
+	return b.String()
 }
 
 // --- 見出しスラッグ id ---
@@ -364,13 +417,7 @@ func processImage(n *xhtml.Node, opts Options, saw *bool) {
 	if isRemoteURL(src) || srcsetHasRemote(getAttr(n, "srcset")) {
 		*saw = true
 		if !opts.AllowRemoteImages {
-			// 遮断: 退避してから src/srcset を除去（読み込みを発生させない）。
-			if src != "" {
-				setAttr(n, "data-blocked-src", src)
-			}
-			delAttr(n, "src")
-			delAttr(n, "srcset")
-			setAttr(n, "data-remote-blocked", "")
+			blockImage(n, src)
 		}
 		return
 	}
@@ -378,11 +425,7 @@ func processImage(n *xhtml.Node, opts Options, saw *bool) {
 	// （NTLM ハッシュ）を送出するため、表示確認は出さず常に遮断する。同一ホスト UNC
 	// （文書と同じサーバ）はローカルとして下で読み込む。
 	if isCrossHostUNC(opts.BaseDir, src) {
-		if src != "" {
-			setAttr(n, "data-blocked-src", src)
-		}
-		delAttr(n, "src")
-		setAttr(n, "data-remote-blocked", "")
+		blockImage(n, src)
 		return
 	}
 	// ローカル画像（<img> のみ）を data URI 化する。
@@ -392,6 +435,35 @@ func processImage(n *xhtml.Node, opts Options, saw *bool) {
 	if dataURI := imageToDataURI(opts.BaseDir, src); dataURI != "" {
 		setAttr(n, "src", dataURI)
 	}
+}
+
+// blockedImageLabel は遮断した画像の代わりに表示する文言（後ろに代替テキストを続ける）。
+const blockedImageLabel = "🚫 外部画像（非表示）"
+
+// blockImage は画像を読み込ませずに遮断する。src は data-blocked-src へ退避し、src/srcset を除去する。
+// <img> は文言と代替テキストを持つ <span> に置き換える——img は置換要素のため、CSS の ::after で
+// 文言を出す方式は WebKit（macOS / Linux）では描画されない（Blink は読み込めなかった img に限り描く）。
+// <source>（<picture> 内）は表示を持たないため属性の処理だけ行う。
+func blockImage(n *xhtml.Node, src string) {
+	if n.Data != "img" {
+		if src != "" {
+			setAttr(n, "data-blocked-src", src)
+		}
+		delAttr(n, "src")
+		delAttr(n, "srcset")
+		setAttr(n, "data-remote-blocked", "")
+		return
+	}
+	label := blockedImageLabel
+	if alt := strings.TrimSpace(getAttr(n, "alt")); alt != "" {
+		label += " " + alt
+	}
+	n.Data, n.DataAtom = "span", atom.Span
+	n.Attr = []xhtml.Attribute{{Key: "class", Val: "remote-blocked"}, {Key: "data-remote-blocked"}}
+	if src != "" {
+		setAttr(n, "data-blocked-src", src)
+	}
+	n.AppendChild(&xhtml.Node{Type: xhtml.TextNode, Data: label})
 }
 
 // imageToDataURI はローカル画像を読み込み data URI を返す（失敗・不在・サイズ超過は空文字）。
@@ -582,7 +654,9 @@ func buildPolicy() *bluemonday.Policy {
 	p.AllowURLSchemes("http", "https", "mailto")
 	p.AllowRelativeURLs(true)
 	// 画像（ローカルは data URI 化済み、リモートは許可時のみ src が残る）
-	p.AllowAttrs("alt", "title", "width", "height", "srcset", "data-remote-blocked", "data-blocked-src").OnElements("img")
+	p.AllowAttrs("alt", "title", "width", "height", "srcset").OnElements("img")
+	// 遮断した画像の置き換え（blockImage が <img> を <span class="remote-blocked"> にする）
+	p.AllowAttrs("data-remote-blocked", "data-blocked-src").OnElements("span")
 	p.AllowImages()
 	p.AllowDataURIImages()
 	// タスクリストのチェックボックス

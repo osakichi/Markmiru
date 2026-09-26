@@ -395,7 +395,7 @@ func (s *Server) serveShell(w http.ResponseWriter, _ *http.Request) {
 		Dialog:       dlg,
 		SidebarOpen:  s.state.SidebarOpen(),
 		CustomCSS:    template.CSS(st.CustomCSS),
-		PrintCodeCSS: template.CSS(render.HighlightCSS("light")),
+		PrintCodeCSS: template.CSS(render.PrintHighlightCSS()),
 	}
 	s.settingsFields(&vm)
 	htmlHeader(w)

@@ -161,6 +161,35 @@ func TestRemoteImageBlocked(t *testing.T) {
 	}
 }
 
+// 遮断した <img> は文言＋代替テキストを持つ <span> に置き換わる（WebKit は img の ::after を描かないため）。
+func TestRemoteImageBlockedPlaceholder(t *testing.T) {
+	cases := []struct{ src, want string }{
+		{"![ロゴ画像](https://example.com/i.png)\n", `<span class="remote-blocked" data-remote-blocked="" data-blocked-src="https://example.com/i.png">🚫 外部画像（非表示） ロゴ画像</span>`},
+		{"![](https://example.com/i.png)\n", `>🚫 外部画像（非表示）</span>`},
+		{"[![リンク内](https://example.com/i.png)](https://example.com)\n", `>🚫 外部画像（非表示） リンク内</span></a>`},
+	}
+	for _, c := range cases {
+		html := mustRender(t, c.src, Options{}).HTML
+		if !strings.Contains(html, c.want) {
+			t.Errorf("placeholder mismatch: in=%q want %q, got: %s", c.src, c.want, html)
+		}
+		if strings.Contains(html, "<img") {
+			t.Errorf("blocked img must be replaced, got: %s", html)
+		}
+	}
+}
+
+// 代替テキストは本文のテキストとして出るため、HTML として解釈されない。
+func TestRemoteImageBlockedAltEscaped(t *testing.T) {
+	html := mustRender(t, `<img src="https://example.com/i.png" alt="<script>alert(1)</script>">`+"\n", Options{}).HTML
+	if strings.Contains(html, "<script") {
+		t.Errorf("alt must be escaped, got: %s", html)
+	}
+	if !strings.Contains(html, "&lt;script&gt;") {
+		t.Errorf("alt text should remain as escaped text, got: %s", html)
+	}
+}
+
 func TestRemoteImageAllowed(t *testing.T) {
 	r := mustRender(t, "![a](https://example.com/i.png)\n", Options{AllowRemoteImages: true})
 	if !r.HasRemoteImages {
@@ -301,6 +330,28 @@ func TestContentHasRemoteImages(t *testing.T) {
 		if got := ContentHasRemoteImages(in); got != want {
 			t.Errorf("ContentHasRemoteImages(%q)=%v want %v", in, got, want)
 		}
+	}
+}
+
+// 印刷用のコード CSS は、画面がダークのときに付く太字・斜体を打ち消し、ライト自身の装飾は残す。
+func TestPrintHighlightCSS(t *testing.T) {
+	css := PrintHighlightCSS()
+	if !strings.HasPrefix(css, HighlightCSS("light")) {
+		t.Errorf("print CSS must start with the light theme")
+	}
+	for _, want := range []string{
+		".chroma .nf { font-weight:normal }", // 関数名: github-dark は bold、github は無し
+		".chroma .c1 { font-style:normal }",  // 1 行コメント: github-dark は italic
+		".bg, .chroma { color:inherit }",     // コード全体: github-dark は淡色、github は指定なし
+		".chroma .py { color:inherit }",      // プロパティ名: github-dark のみ色を持つ
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("print CSS missing %q", want)
+		}
+	}
+	// ラベル（.nl）は github 自身が bold のため打ち消さない。
+	if strings.Contains(css, ".chroma .nl { font-weight:normal") {
+		t.Errorf("light theme's own bold must be kept")
 	}
 }
 
