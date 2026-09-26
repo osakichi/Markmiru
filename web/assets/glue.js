@@ -273,15 +273,20 @@
   // そのまま保存するとサーバは古い内容を書き込み（クリーン認識なら no-op にすらなる）、再読み込みでは
   // 未保存の変更に気付かず確認なしで破棄してしまうため、必ず現在の内容を先にサーバへ同期（flush）して
   // から対象のエンドポイントを叩く。
-  function flushThen(path) {
+  // values は対象のエンドポイントへ送る値（省略可）。
+  function flushThen(path, values) {
+    if (!window.htmx) return
+    var send = function () {
+      window.htmx.ajax('POST', path, { target: '#content', swap: 'innerHTML', values: values || {} })
+    }
     var ta = document.querySelector('.editor-input')
-    if (ta && window.htmx) {
+    if (ta) {
       window.htmx
         .ajax('POST', ta.getAttribute('hx-post'), { source: ta, values: { value: ta.value } })
-        .then(function () { ajax('POST', path, '#content') })
+        .then(send)
       return
     }
-    ajax('POST', path, '#content')
+    send()
   }
   function saveActive(path) {
     flushThen(path)
@@ -384,6 +389,18 @@
     R.EventsOn('app:request-quit', function () {
       if (window.htmx) window.htmx.ajax('POST', '/quit/request', { target: '#dialog-host', swap: 'innerHTML' })
     })
+    // ドラッグ&ドロップ（§5.13）: Wails の OnFileDrop がドロップされたファイルの絶対パスを渡す。
+    // 第 2 引数 false＝ドロップ先の要素を限定しない（ウィンドウのどこに落としてもよい）。登録と同時に
+    // Wails ランタイムが window の dragover/drop で既定動作（WebView がファイルを開いて画面遷移する）を
+    // 止める——Windows（WebView2）ではこの JS 側の処理がパスを取り出す経路そのものでもある。
+    // 開く／再読み込みの判断はサーバが行う。確認ダイアログの表示中は、確認の対象が入れ替わる混乱を
+    // 避けるため無視する。現在のタブに未送信の編集が残り得るため、再読み込みと同じく flush してから送る。
+    if (R.OnFileDrop) {
+      R.OnFileDrop(function (x, y, paths) {
+        if (!paths || !paths.length || activeDialog()) return
+        flushThen('/tabs/drop', { paths: JSON.stringify(paths) })
+      }, false)
+    }
     // 単一インスタンス IPC / ファイル関連付け: 実行中アプリで指定ファイルを開く。
     R.EventsOn('ipc:open-file', function (path) {
       if (path && window.htmx) window.htmx.ajax('POST', '/tabs/open-path', { target: '#content', values: { path: path } })

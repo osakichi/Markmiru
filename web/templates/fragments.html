@@ -230,23 +230,27 @@
   </div>
 </div></div>{{end}}
 
-{{/* 未保存の変更がある状態での再読み込み確認（.TabID / .FileName）。
+{{/* 未保存の変更がある状態での再読み込み確認（.TabID / .FileName / .Drop）。
+     .Drop（ドラッグ&ドロップの処理中）なら選択を /drop/step へ送り、残りのファイルの処理を続ける。
      破棄（データ損失）は data-dialog-accept で 500ms 遅延有効・Enter では発火しない。
      安全側「キャンセル」を Enter/Esc の既定に（未保存の変更を保ったまま閉じる）。 */}}
 {{define "dialog-reload-unsaved"}}<div class="mm-backdrop"><div class="mm-dialog" role="dialog" aria-modal="true">
   <p class="mm-dialog-msg">「{{.FileName}}」には未保存の変更があります。変更を破棄してファイルを再読み込みしますか？</p>
   <div class="mm-dialog-actions">
-    <button type="button" class="mm-btn" data-dialog-reject data-dialog-default hx-post="/tabs/{{.TabID}}/reload?choice=cancel" hx-target="#content">キャンセル</button>
-    <button type="button" class="mm-btn mm-btn-danger" data-dialog-accept disabled hx-post="/tabs/{{.TabID}}/reload?choice=discard" hx-target="#content">破棄して再読み込み</button>
+    {{if .Drop}}<button type="button" class="mm-btn" data-dialog-reject data-dialog-default hx-post="/drop/step?choice=cancel" hx-target="#content">キャンセル</button>
+    <button type="button" class="mm-btn mm-btn-danger" data-dialog-accept disabled hx-post="/drop/step?choice=discard" hx-target="#content">破棄して再読み込み</button>
+    {{else}}<button type="button" class="mm-btn" data-dialog-reject data-dialog-default hx-post="/tabs/{{.TabID}}/reload?choice=cancel" hx-target="#content">キャンセル</button>
+    <button type="button" class="mm-btn mm-btn-danger" data-dialog-accept disabled hx-post="/tabs/{{.TabID}}/reload?choice=discard" hx-target="#content">破棄して再読み込み</button>{{end}}
   </div>
 </div></div>{{end}}
 
-{{/* 再読み込みの失敗通知（.Path）。本文・未保存の変更は保持済み。OK のみ（Enter/Esc で閉じる）。 */}}
+{{/* 再読み込みの失敗通知（.Path / .Drop）。本文・未保存の変更は保持済み。OK のみ（Enter/Esc で閉じる）。
+     .Drop なら OK で残りのファイルの処理を続ける。 */}}
 {{define "dialog-reload-failed"}}<div class="mm-backdrop"><div class="mm-dialog" role="dialog" aria-modal="true">
   <p class="mm-dialog-msg">ファイルを読み込めませんでした。削除・移動されていないか確認してください:</p>
   <p class="mm-dialog-path">{{.Path}}</p>
   <div class="mm-dialog-actions">
-    <button type="button" class="mm-btn mm-btn-primary" data-dialog-reject data-dialog-default hx-post="/dialog/close" hx-target="#content">OK</button>
+    <button type="button" class="mm-btn mm-btn-primary" data-dialog-reject data-dialog-default hx-post="{{if .Drop}}/drop/step?choice=next{{else}}/dialog/close{{end}}" hx-target="#content">OK</button>
   </div>
 </div></div>{{end}}
 

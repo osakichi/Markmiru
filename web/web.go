@@ -12,10 +12,12 @@ package web
 
 import (
 	"embed"
+	"encoding/json"
 	"html/template"
 	"io/fs"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -135,6 +137,7 @@ type dialogVM struct {
 	Path     string // missing-file / reload-failed: 対象ファイルのフルパス（表示用）
 	URL      string // link: 開く予定の外部 URL（表示用）
 	Quit     bool   // close-unsaved: 終了ループ中か
+	Drop     bool   // reload-unsaved / reload-failed: ドラッグ&ドロップの処理中か（選択後に残りを続ける）
 }
 
 // OpenedFile は OS のファイル選択で開いた1ファイル。
@@ -239,6 +242,8 @@ func NewHandler(state *State, host Host) http.Handler {
 	mux.HandleFunc("POST /active/reload", s.serveActiveReload)
 	mux.HandleFunc("POST /tabs/{id}/reload", s.serveReload)
 	mux.HandleFunc("POST /dialog/close", s.serveDialogClose)
+	mux.HandleFunc("POST /tabs/drop", s.serveDrop)
+	mux.HandleFunc("POST /drop/step", s.serveDropStep)
 	mux.HandleFunc("POST /tabs/{id}/mode", s.serveMode)
 	mux.HandleFunc("POST /tabs/{id}/content", s.serveContent)
 	mux.HandleFunc("POST /tabs/{id}/remote-images", s.serveRemoteImages)
@@ -914,18 +919,104 @@ func (s *Server) reload(w http.ResponseWriter, r *http.Request, id string) {
 		s.serveNavKeep(w)
 		return
 	}
-	var content string
-	var read bool
-	if s.host != nil {
-		_, content, read = s.host.ReadFile(path)
-	}
-	if !read {
+	if !s.readAndReload(id, path) {
 		// 本文は触れず（未保存の変更も保持）、エラーだけ #dialog-host に出す。
 		s.serveNavKeepWithDialog(w, &dialogVM{Kind: "reload-failed", TabID: id, FileName: fileName, Path: path})
 		return
 	}
-	s.state.Reload(id, content)
 	s.serveNav(w)
+}
+
+// readAndReload はファイルを読み直してタブの本文を置き換える（未保存の変更の確認は呼び出し側で済ませる）。
+// 読めなければ何も変えずに false を返す。
+func (s *Server) readAndReload(id, path string) bool {
+	if s.host == nil {
+		return false
+	}
+	_, content, ok := s.host.ReadFile(path)
+	if !ok {
+		return false
+	}
+	return s.state.Reload(id, content)
+}
+
+// markdownExts はドラッグ&ドロップで受け付ける拡張子（「開く」ダイアログの既定の絞り込み
+// ＝main.go の markdownFilters と同じ）。
+var markdownExts = map[string]bool{".md": true, ".markdown": true, ".mdown": true, ".txt": true}
+
+// isMarkdownPath はパスの拡張子が受け付ける Markdown の拡張子か（大文字小文字は区別しない）。
+func isMarkdownPath(path string) bool {
+	return markdownExts[strings.ToLower(filepath.Ext(path))]
+}
+
+// serveDrop はドラッグ&ドロップされたファイルを処理する（§5.13）。paths は JSON 配列のパス列。
+// Markdown の拡張子のファイルだけを、ドロップされた順に処理する——まだ開いていないファイルは開き、
+// 既に開いているファイルはそのタブをアクティブにしてから再読み込みする（§5.4 と同じ。未保存の
+// 変更があれば確認ダイアログで止まり、選択後に残りを続ける）。最後に処理したファイルのタブが
+// アクティブになる。読めないファイル（フォルダ等）は「開く」と同じく黙って無視する。
+// 確認ダイアログの表示中はクライアント（glue）がドロップを送らない。
+func (s *Server) serveDrop(w http.ResponseWriter, r *http.Request) {
+	var paths []string
+	_ = json.Unmarshal([]byte(r.FormValue("paths")), &paths)
+	var targets []string
+	for _, p := range paths {
+		if p != "" && isMarkdownPath(p) {
+			targets = append(targets, p)
+		}
+	}
+	s.state.SetDropQueue(targets)
+	s.continueDrop(w)
+}
+
+// serveDropStep はドロップ処理の途中で出したダイアログの選択を受けて、残りを続ける。
+//   - choice=discard: 処理中のタブの未保存の変更を破棄して再読み込みする
+//   - choice=cancel: 処理中のタブは再読み込みせず（未保存の変更を保ったまま）次へ
+//   - choice=next: 再読み込みの失敗通知を閉じて次へ（処理中のパスは取り除き済み）
+func (s *Server) serveDropStep(w http.ResponseWriter, r *http.Request) {
+	switch r.URL.Query().Get("choice") {
+	case "discard":
+		path := s.state.DropHead()
+		s.state.PopDrop()
+		if id := s.state.TabIDByPath(path); id != "" && !s.readAndReload(id, path) {
+			s.serveNavWithDialog(w, &dialogVM{Kind: "reload-failed", Path: path, Drop: true})
+			return
+		}
+	case "cancel":
+		s.state.PopDrop()
+	}
+	s.continueDrop(w)
+}
+
+// continueDrop はドロップされたファイルの残りを先頭から処理し、ユーザーの選択が要るところ
+// （未保存の変更がある再読み込みの確認・再読み込みの失敗通知）でダイアログを出して止まる。
+// 全て処理したら現在のアクティブタブ（最後に処理したファイル）を表示する。
+func (s *Server) continueDrop(w http.ResponseWriter) {
+	for {
+		path := s.state.DropHead()
+		if path == "" {
+			s.serveNav(w)
+			return
+		}
+		if id := s.state.TabIDByPath(path); id != "" {
+			s.state.Activate(id)
+			if _, fileName, dirty, ok := s.state.ReloadInfo(id); ok && dirty {
+				s.serveNavWithDialog(w, &dialogVM{Kind: "reload-unsaved", TabID: id, FileName: fileName, Drop: true})
+				return
+			}
+			s.state.PopDrop()
+			if !s.readAndReload(id, path) {
+				s.serveNavWithDialog(w, &dialogVM{Kind: "reload-failed", Path: path, Drop: true})
+				return
+			}
+			continue
+		}
+		s.state.PopDrop()
+		if s.host != nil {
+			if name, content, ok := s.host.ReadFile(path); ok {
+				s.state.Activate(s.state.AddTab(path, name, content).ID)
+			}
+		}
+	}
 }
 
 // serveDialogClose は情報表示だけのダイアログ（再読み込み失敗の通知等）を閉じる。本文は触れない。

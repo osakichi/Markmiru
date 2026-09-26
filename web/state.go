@@ -58,6 +58,10 @@ type State struct {
 
 	// pendingLinkURL は外部リンク確認ダイアログで開く予定の URL（表示中のみ非空）。
 	pendingLinkURL string
+
+	// dropQueue はドラッグ&ドロップされたファイルのうち未処理のパス（先頭が処理中）。
+	// 未保存の変更があるタブの再読み込み確認のように、途中でユーザーの選択を待つために持つ（§5.13）。
+	dropQueue []string
 }
 
 // NewState はプリセットを読み込んだ初期状態を返す（アクティブスタイル = light、サイドバー開）。
@@ -620,6 +624,44 @@ func (s *State) ActivateByPath(path string) bool {
 		}
 	}
 	return false
+}
+
+// TabIDByPath は指定パスのファイルを開いているタブの ID を返す（無ければ ""）。
+func (s *State) TabIDByPath(path string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, t := range s.tabs {
+		if t.FilePath == path {
+			return t.ID
+		}
+	}
+	return ""
+}
+
+// SetDropQueue はドロップされたファイルのパス列を処理待ちとして保持する（前回の残りは捨てる）。
+func (s *State) SetDropQueue(paths []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.dropQueue = append([]string(nil), paths...)
+}
+
+// DropHead は処理中（先頭）のドロップされたファイルのパスを返す（無ければ ""）。
+func (s *State) DropHead() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.dropQueue) == 0 {
+		return ""
+	}
+	return s.dropQueue[0]
+}
+
+// PopDrop は処理中（先頭）のパスを処理済みとして取り除く。
+func (s *State) PopDrop() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.dropQueue) > 0 {
+		s.dropQueue = s.dropQueue[1:]
+	}
 }
 
 // SetRemoteImagePolicy はタブのリモート画像ポリシー（"allow"/"block"）を設定する。

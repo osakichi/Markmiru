@@ -1879,3 +1879,107 @@ func TestReloadAdoptsNewFormat(t *testing.T) {
 		t.Errorf("saved = %q, want %q", got, want)
 	}
 }
+
+// --- ドラッグ&ドロップ（§5.13） ---
+
+// dropReq は /tabs/drop へパス列（JSON）を送るリクエストパスを返す。
+func dropReq(paths ...string) string {
+	js := `["` + strings.Join(paths, `","`) + `"]`
+	return "/tabs/drop?paths=" + url.QueryEscape(js)
+}
+
+// まだ開いていないファイルは開き、最後にドロップしたファイルのタブを表示する。
+func TestDropOpensNewFilesAndActivatesLast(t *testing.T) {
+	st := NewState()
+	host := &fakeHost{readFiles: map[string]string{"/d/a.md": "# A", "/d/b.md": "# B"}}
+	rec := do(NewHandler(st, host), "POST", dropReq("/d/a.md", "/d/b.md"))
+	if len(st.TabVMs()) != 2 {
+		t.Fatalf("both files should be opened, tabs=%d", len(st.TabVMs()))
+	}
+	if req := st.RenderReqActive(); req.Content != "# B" {
+		t.Errorf("last dropped file should be active, got %q", req.Content)
+	}
+	if !strings.Contains(rec.Body.String(), `id="b"`) {
+		t.Errorf("response should render the last dropped file: %s", rec.Body.String())
+	}
+}
+
+// Markdown 以外の拡張子と読めないファイルは無視する（拡張子は大文字小文字を区別しない）。
+func TestDropFiltersExtensionsAndIgnoresUnreadable(t *testing.T) {
+	st := NewState()
+	host := &fakeHost{readFiles: map[string]string{"/d/a.png": "x", "/d/B.MD": "# B", "/d/c.txt": "C"}}
+	do(NewHandler(st, host), "POST", dropReq("/d/a.png", "/d/B.MD", "/d/gone.md", "/d/c.txt"))
+	var names []string
+	for _, tv := range st.TabVMs() {
+		names = append(names, tv.FileName)
+	}
+	if strings.Join(names, ",") != "B.MD,c.txt" {
+		t.Errorf("only readable Markdown files should open, got %v", names)
+	}
+}
+
+// 既に開いているファイルは、そのタブをアクティブにして再読み込みする（新しいタブは増やさない）。
+func TestDropReloadsAlreadyOpenFile(t *testing.T) {
+	st := NewState()
+	a := st.AddTab("/d/a.md", "a.md", "# old")
+	st.NewUntitled() // 別のタブをアクティブに
+	host := &fakeHost{readFiles: map[string]string{"/d/a.md": "# new"}}
+	do(NewHandler(st, host), "POST", dropReq("/d/a.md"))
+	if len(st.TabVMs()) != 2 {
+		t.Errorf("no new tab should be added, tabs=%d", len(st.TabVMs()))
+	}
+	if st.ActiveID() != a.ID {
+		t.Errorf("the dropped file's tab should become active")
+	}
+	if req, _ := st.RenderReq(a.ID); req.Content != "# new" {
+		t.Errorf("the open file should be reloaded, got %q", req.Content)
+	}
+}
+
+// 未保存の変更がある開いたファイルは確認ダイアログで止まり、選択後に残りのファイルを続ける。
+func TestDropDirtyTabAsksThenContinues(t *testing.T) {
+	for _, c := range []struct {
+		choice, wantA string
+		dirty         bool
+	}{
+		{"discard", "# new", false},
+		{"cancel", "edited!!!", true},
+	} {
+		st, id := dirtyTab("/d/a.md")
+		host := &fakeHost{readFiles: map[string]string{"/d/a.md": "# new", "/d/b.md": "# B"}}
+		h := NewHandler(st, host)
+		body := do(h, "POST", dropReq("/d/a.md", "/d/b.md")).Body.String()
+		if !strings.Contains(body, "/drop/step?choice=discard") || !strings.Contains(body, "/drop/step?choice=cancel") {
+			t.Fatalf("drop onto a dirty tab should ask with drop-step actions: %s", body)
+		}
+		if st.ActiveID() != id || len(st.TabVMs()) != 1 {
+			t.Fatalf("processing should stop at the dirty tab (active, b.md not yet opened)")
+		}
+		do(h, "POST", "/drop/step?choice="+c.choice)
+		if req, _ := st.RenderReq(id); req.Content != c.wantA || st.IsDirty(id) != c.dirty {
+			t.Errorf("%s: a.md content=%q dirty=%v", c.choice, req.Content, st.IsDirty(id))
+		}
+		if len(st.TabVMs()) != 2 || st.RenderReqActive().Content != "# B" {
+			t.Errorf("%s: the remaining file should be opened and active", c.choice)
+		}
+	}
+}
+
+// 開いているファイルが読めなくなっていれば失敗を通知し、OK で残りを続ける（内容は保持）。
+func TestDropReloadFailureNotifiesThenContinues(t *testing.T) {
+	st := NewState()
+	a := st.AddTab("/d/a.md", "a.md", "# kept")
+	host := &fakeHost{readFiles: map[string]string{"/d/b.md": "# B"}}
+	h := NewHandler(st, host)
+	body := do(h, "POST", dropReq("/d/a.md", "/d/b.md")).Body.String()
+	if !strings.Contains(body, "読み込めませんでした") || !strings.Contains(body, "/drop/step?choice=next") {
+		t.Fatalf("reload failure during drop should be notified: %s", body)
+	}
+	do(h, "POST", "/drop/step?choice=next")
+	if req, _ := st.RenderReq(a.ID); req.Content != "# kept" {
+		t.Errorf("failed reload must keep the content")
+	}
+	if len(st.TabVMs()) != 2 || st.RenderReqActive().Content != "# B" {
+		t.Errorf("the remaining file should be opened after OK")
+	}
+}

@@ -320,6 +320,13 @@ func main() {
 		// Linux 固有オプション（ウィンドウアイコン・ProgramName・GPU ポリシー維持）。
 		// 他 OS では nil（Wails は自 OS 以外のオプションを無視する）。
 		Linux: platformLinuxOptions(),
+		// ドラッグ&ドロップでファイルを開く（§5.13）。パスは glue.js の runtime.OnFileDrop が受け、
+		// POST /tabs/drop へ送る。DisableWebViewDrop は使わない——Windows では WebView2 への外部
+		// ドロップ自体を止め（AllowExternalDrag(false)。パスを取り出す JS 側の経路も届かなくなる）、
+		// Linux では WebView のドロップ受け口を外す（gtk_drag_dest_unset。Wails のドロップ通知も
+		// 届かなくなる）ため。WebView がドロップしたファイルを開いて画面遷移する既定動作は、
+		// OnFileDrop の登録時に Wails ランタイムが dragover/drop の preventDefault で止める。
+		DragAndDrop: &options.DragAndDrop{EnableFileDrop: true},
 	})
 
 	if err != nil {
